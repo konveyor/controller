@@ -1,2 +1,2 @@
 # controller
-Common controller lib.
+Common controller lib.  Provides components shared by application controllers.
