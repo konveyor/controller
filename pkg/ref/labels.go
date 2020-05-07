@@ -13,23 +13,25 @@ const (
 )
 
 var (
-	// Application identifier included in correlation labels.
+	// Application identifier included in reference labels.
 	// **Must set be by the using application.
 	Application = ""
 )
 
 //
-// Build unique correlation label for an object.
-func CorrelationLabel(object v1.Object) (label, uid string) {
+// Build unique reference label for an object.
+// Format: <kind> = <uid>
+func Label(object v1.Object) (label, uid string) {
 	label = string(object.GetUID())
 	uid = strings.ToLower(ToKind(object))
 	return
 }
 
 //
-// Build correlation labels for an object.
-func CorrelationLabels(object v1.Object) map[string]string {
-	label, uid := CorrelationLabel(object)
+// Build reference labels for an object.
+// Includes both `Application` and unique labels.
+func Labels(object v1.Object) map[string]string {
+	label, uid := Label(object)
 	return map[string]string{
 		PartOfLabel: Application,
 		label:       uid,
