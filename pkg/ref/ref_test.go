@@ -11,13 +11,17 @@ import (
 	"testing"
 )
 
+type _ThingSpec struct {
+	RefD *v1.ObjectReference `json:"refD" ref:"ThingD"`
+}
+
 type _Thing struct {
 	meta.TypeMeta   `json:",inline"`
 	meta.ObjectMeta `json:"metadata,omitempty"`
 	RefA            *v1.ObjectReference `json:"refA" ref:"ThingA"`
 	RefB            *v1.ObjectReference `json:"refB" ref:"ThingB"`
 	RefC            *v1.ObjectReference `json:"refC" ref:"ThingC"`
-	RefD            *v1.ObjectReference `json:"refD" ref:"ThingD"`
+	Spec            _ThingSpec
 }
 
 func (t *_Thing) GetObjectKind() schema.ObjectKind {
@@ -306,8 +310,7 @@ func TestHandler(t *testing.T) {
 		handler.MapObject{
 			Meta:   target,
 			Object: target,
-		},
-		&target)
+		})
 
 	g.Expect(len(list)).To(gomega.Equal(1))
 }
