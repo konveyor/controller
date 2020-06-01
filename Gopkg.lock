@@ -18,6 +18,35 @@
   version = "v1.1.1"
 
 [[projects]]
+  digest = "1:cc93dd54278f6c0dd4b43588b3cf2c07b09b2a6dd4e2617edf81aa8946054c1e"
+  name = "github.com/gin-contrib/cors"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "5f50d4fb4e0306dcacc6f8e9bea2dcee784dbbdf"
+  version = "v1.3.0"
+
+[[projects]]
+  digest = "1:3ee1d175a75b911a659fbd860060874c4f503e793c5870d13e5a0ede529a63cf"
+  name = "github.com/gin-contrib/sse"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "54d8467d122d380a14768b6b4e5cd7ca4755938f"
+  version = "v0.1.0"
+
+[[projects]]
+  digest = "1:d8bd2a337f6ff2188e08f72c614f2f3f0fd48e6a7b37a071b197e427d77d3a47"
+  name = "github.com/gin-gonic/gin"
+  packages = [
+    ".",
+    "binding",
+    "internal/json",
+    "render",
+  ]
+  pruneopts = "UT"
+  revision = "b75d67cd51eb53c3c3a2fc406524c940021ffbda"
+  version = "v1.4.0"
+
+[[projects]]
   digest = "1:edd2fa4578eb086265db78a9201d15e76b298dfd0d5c379da83e9c61712cf6df"
   name = "github.com/go-logr/logr"
   packages = ["."]
@@ -117,6 +146,22 @@
   version = "v1.1.9"
 
 [[projects]]
+  digest = "1:0c58d31abe2a2ccb429c559b6292e7df89dcda675456fecc282fa90aa08273eb"
+  name = "github.com/mattn/go-isatty"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "7b513a986450394f7bbf1476909911b3aa3a55ce"
+  version = "v0.0.12"
+
+[[projects]]
+  digest = "1:eea5c9cf8cd07b4c466fd309a14ac689b9e5e4175f3c92d13709232d67069d7c"
+  name = "github.com/mattn/go-sqlite3"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "db4c9426f851c76327db11e1b5301e520e0e048b"
+  version = "v2.0.5"
+
+[[projects]]
   digest = "1:33422d238f147d247752996a26574ac48dcf472976eda7f5134015f06bf16563"
   name = "github.com/modern-go/concurrent"
   packages = ["."]
@@ -176,6 +221,14 @@
   pruneopts = "UT"
   revision = "2e9d26c8c37aae03e3f9d4e90b7116f5accb7cab"
   version = "v1.0.5"
+
+[[projects]]
+  digest = "1:5a1cf4e370bc86137b58da2ae065e76526d32b11f62a7665f36dbd5f41fa95ff"
+  name = "github.com/ugorji/go"
+  packages = ["codec"]
+  pruneopts = "UT"
+  revision = "23ab95ef5dc3b70286760af84ce2327a2b64ed62"
+  version = "v1.1.7"
 
 [[projects]]
   digest = "1:19525e48b45af69339bd7c2812137dbd1e650a78fc09c7c75482e307d51aa28d"
@@ -398,6 +451,14 @@
   version = "v1.21.0"
 
 [[projects]]
+  digest = "1:cbc72c4c4886a918d6ab4b95e347ffe259846260f99ebdd8a198c2331cf2b2e9"
+  name = "gopkg.in/go-playground/validator.v8"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "5f1438d3fca68893a817e4a66806cea46a9e4ebf"
+  version = "v8.18.2"
+
+[[projects]]
   digest = "1:2d1fbdc6777e5408cabeb02bf336305e724b925ff4546ded0fa8715a7267922a"
   name = "gopkg.in/inf.v0"
   packages = ["."]
@@ -611,7 +672,10 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/gin-contrib/cors",
+    "github.com/gin-gonic/gin",
     "github.com/go-logr/logr",
+    "github.com/mattn/go-sqlite3",
     "github.com/onsi/gomega",
     "k8s.io/api/core/v1",
     "k8s.io/apimachinery/pkg/api/errors",
