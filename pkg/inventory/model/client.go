@@ -3,6 +3,7 @@ package model
 import (
 	"database/sql"
 	"errors"
+	liberr "github.com/konveyor/controller/pkg/error"
 	"os"
 	"reflect"
 	"sync"
@@ -82,15 +83,12 @@ func (r *Client) Open(purge bool) error {
 	for _, ddl := range statements {
 		_, err = db.Exec(ddl)
 		if err != nil {
-			Log.Trace(err)
 			db.Close()
-			return err
+			return liberr.Wrap(err)
 		}
 	}
 
 	r.db = db
-
-	Log.Info("Database opened.", "path", r.path)
 
 	return nil
 }
@@ -104,8 +102,7 @@ func (r *Client) Close(purge bool) error {
 	}
 	err := r.db.Close()
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	r.db = nil
 	if purge {
@@ -144,8 +141,7 @@ func (r *Client) List(model Model, options ListOptions, list interface{}) error 
 	case reflect.Slice:
 		l, err := Table{r.db}.List(model, options)
 		if err != nil {
-			Log.Trace(err)
-			return err
+			return liberr.Wrap(err)
 		}
 		concrete := reflect.MakeSlice(lv.Type(), 0, 0)
 		for i := 0; i < len(l); i++ {
@@ -240,7 +236,7 @@ func (r *Client) commit(tx *Tx) error {
 	r.Lock()
 	defer r.Unlock()
 	if r.tx == nil || r.tx != tx.ref {
-		return TxInvalidError
+		return liberr.Wrap(TxInvalidError)
 	}
 	defer func() {
 		r.mutex.Unlock()
@@ -257,7 +253,7 @@ func (r *Client) rollback(tx *Tx) error {
 	r.Lock()
 	defer r.Unlock()
 	if r.tx == nil || r.tx != tx.ref {
-		return TxInvalidError
+		return liberr.Wrap(TxInvalidError)
 	}
 	defer func() {
 		r.mutex.Unlock()

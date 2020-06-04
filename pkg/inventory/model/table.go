@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	liberr "github.com/konveyor/controller/pkg/error"
 	"github.com/mattn/go-sqlite3"
 	"reflect"
 	"regexp"
@@ -199,21 +200,18 @@ func (t Table) DDL(model interface{}) ([]string, error) {
 	tpl := template.New("")
 	fields, err := t.Fields(model)
 	if err != nil {
-		Log.Trace(err)
-		return nil, err
+		return nil, liberr.Wrap(err)
 	}
 	for _, f := range fields {
 		err := f.Validate()
 		if err != nil {
-			Log.Trace(err)
-			return nil, err
+			return nil, liberr.Wrap(err)
 		}
 	}
 	// Table
 	tpl, err = tpl.Parse(TableDDL)
 	if err != nil {
-		Log.Trace(err)
-		return nil, err
+		return nil, liberr.Wrap(err)
 	}
 	constraints := t.Constraints(fields)
 	bfr := &bytes.Buffer{}
@@ -225,8 +223,7 @@ func (t Table) DDL(model interface{}) ([]string, error) {
 			Fields:      fields,
 		})
 	if err != nil {
-		Log.Trace(err)
-		return nil, err
+		return nil, liberr.Wrap(err)
 	}
 	list = append(list, bfr.String())
 	// Index.
@@ -234,8 +231,7 @@ func (t Table) DDL(model interface{}) ([]string, error) {
 	if len(fields) > 0 {
 		tpl, err = tpl.Parse(IndexDDL)
 		if err != nil {
-			Log.Trace(err)
-			return nil, err
+			return nil, liberr.Wrap(err)
 		}
 		bfr = &bytes.Buffer{}
 		err = tpl.Execute(
@@ -245,8 +241,7 @@ func (t Table) DDL(model interface{}) ([]string, error) {
 				Fields: fields,
 			})
 		if err != nil {
-			Log.Trace(err)
-			return nil, err
+			return nil, liberr.Wrap(err)
 		}
 		list = append(list, bfr.String())
 	}
@@ -260,13 +255,11 @@ func (t Table) DDL(model interface{}) ([]string, error) {
 func (t Table) Insert(model interface{}) error {
 	fields, err := t.Fields(model)
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	stmt, err := t.insertSQL(t.Name(model), fields)
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	params := t.Params(fields)
 	r, err := t.Db.Exec(stmt, params...)
@@ -276,23 +269,19 @@ func (t Table) Insert(model interface{}) error {
 				return t.Update(model)
 			}
 		}
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	nRows, err := r.RowsAffected()
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	if nRows == 0 {
 		return nil
 	}
 	if m, cast := model.(Model); cast {
-		Log.Info(fmt.Sprintf("%s inserted.", t.Name(m)), "model", m.String())
 		err := t.InsertLabels(m)
 		if err != nil {
-			Log.Trace(err)
-			return err
+			return liberr.Wrap(err)
 		}
 	}
 
@@ -305,38 +294,32 @@ func (t Table) Insert(model interface{}) error {
 func (t Table) Update(model interface{}) error {
 	fields, err := t.Fields(model)
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	stmt, err := t.updateSQL(t.Name(model), fields)
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	params := t.Params(fields)
 	r, err := t.Db.Exec(stmt, params...)
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	nRows, err := r.RowsAffected()
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	if nRows == 0 {
 		if t.Get(model) == nil {
-			return Conflict
+			return liberr.Wrap(Conflict)
 		} else {
-			return NotFound
+			return liberr.Wrap(NotFound)
 		}
 	}
 	if m, cast := model.(Model); cast {
-		Log.Info(fmt.Sprintf("%s updated.", t.Name(m)), "model", m.String())
 		err := t.ReplaceLabels(m)
 		if err != nil {
-			Log.Trace(err)
-			return err
+			return liberr.Wrap(err)
 		}
 	}
 
@@ -349,34 +332,28 @@ func (t Table) Update(model interface{}) error {
 func (t Table) Delete(model interface{}) error {
 	fields, err := t.Fields(model)
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	stmt, err := t.deleteSQL(t.Name(model), fields)
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	params := t.Params(fields)
 	r, err := t.Db.Exec(stmt, params...)
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	nRows, err := r.RowsAffected()
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	if nRows == 0 {
 		return nil
 	}
 	if m, cast := model.(Model); cast {
-		Log.Info(fmt.Sprintf("%s deleted.", t.Name(m)), "model", m.String())
 		err := t.DeleteLabels(m)
 		if err != nil {
-			Log.Trace(err)
-			return err
+			return liberr.Wrap(err)
 		}
 	}
 
@@ -390,22 +367,17 @@ func (t Table) Delete(model interface{}) error {
 func (t Table) Get(model interface{}) error {
 	fields, err := t.Fields(model)
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	stmt, err := t.getSQL(t.Name(model), fields)
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 	params := t.Params(fields)
 	row := t.Db.QueryRow(stmt, params...)
 	err = t.scan(row, fields)
-	if err != nil && err != sql.ErrNoRows {
-		Log.Trace(err)
-	}
 
-	return err
+	return liberr.Wrap(err)
 }
 
 //
@@ -416,19 +388,16 @@ func (t Table) Get(model interface{}) error {
 func (t Table) List(model interface{}, options ListOptions) ([]interface{}, error) {
 	fields, err := t.Fields(model)
 	if err != nil {
-		Log.Trace(err)
-		return nil, err
+		return nil, liberr.Wrap(err)
 	}
 	stmt, err := t.listSQL(t.Name(model), fields, options)
 	if err != nil {
-		Log.Trace(err)
-		return nil, err
+		return nil, liberr.Wrap(err)
 	}
 	params := t.Params(fields)
 	cursor, err := t.Db.Query(stmt, params...)
 	if err != nil {
-		Log.Trace(err)
-		return nil, err
+		return nil, liberr.Wrap(err)
 	}
 	defer cursor.Close()
 	list := []interface{}{}
@@ -439,8 +408,7 @@ func (t Table) List(model interface{}, options ListOptions) ([]interface{}, erro
 		newFields, _ := t.Fields(mInt)
 		err = t.scan(cursor, newFields)
 		if err != nil {
-			Log.Trace(err)
-			return nil, err
+			return nil, liberr.Wrap(err)
 		}
 		list = append(list, mInt)
 	}
@@ -456,26 +424,22 @@ func (t Table) List(model interface{}, options ListOptions) ([]interface{}, erro
 func (t Table) Count(model interface{}, options ListOptions) (int64, error) {
 	fields, err := t.Fields(model)
 	if err != nil {
-		Log.Trace(err)
-		return 0, err
+		return 0, liberr.Wrap(err)
 	}
 	options.Count = true
 	stmt, err := t.listSQL(t.Name(model), fields, options)
 	if err != nil {
-		Log.Trace(err)
-		return 0, err
+		return 0, liberr.Wrap(err)
 	}
 	count := int64(0)
 	params := t.Params(fields)
 	row := t.Db.QueryRow(stmt, params...)
 	if err != nil {
-		Log.Trace(err)
-		return 0, err
+		return 0, liberr.Wrap(err)
 	}
 	err = row.Scan(&count)
 	if err != nil {
-		Log.Trace(err)
-		return 0, err
+		return 0, liberr.Wrap(err)
 	}
 
 	return count, nil
@@ -493,8 +457,7 @@ func (t Table) InsertLabels(model Model) error {
 		}
 		err := t.Insert(label)
 		if err != nil {
-			Log.Trace(err)
-			return err
+			return liberr.Wrap(err)
 		}
 	}
 
@@ -516,8 +479,7 @@ func (t Table) DeleteLabels(model Model) error {
 func (t Table) ReplaceLabels(model Model) error {
 	err := t.DeleteLabels(model)
 	if err != nil {
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
 
 	return t.InsertLabels(model)
@@ -687,8 +649,7 @@ func (t Table) insertSQL(table string, fields []*Field) (string, error) {
 	tpl := template.New("")
 	tpl, err := tpl.Parse(InsertSQL)
 	if err != nil {
-		Log.Trace(err)
-		return "", err
+		return "", liberr.Wrap(err)
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
@@ -698,8 +659,7 @@ func (t Table) insertSQL(table string, fields []*Field) (string, error) {
 			Fields: fields,
 		})
 	if err != nil {
-		Log.Trace(err)
-		return "", err
+		return "", liberr.Wrap(err)
 	}
 
 	return bfr.String(), nil
@@ -711,8 +671,7 @@ func (t Table) updateSQL(table string, fields []*Field) (string, error) {
 	tpl := template.New("")
 	tpl, err := tpl.Parse(UpdateSQL)
 	if err != nil {
-		Log.Trace(err)
-		return "", err
+		return "", liberr.Wrap(err)
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
@@ -725,8 +684,7 @@ func (t Table) updateSQL(table string, fields []*Field) (string, error) {
 			Pk:       t.PkField(fields),
 		})
 	if err != nil {
-		Log.Trace(err)
-		return "", err
+		return "", liberr.Wrap(err)
 	}
 
 	return bfr.String(), nil
@@ -738,8 +696,7 @@ func (t Table) deleteSQL(table string, fields []*Field) (string, error) {
 	tpl := template.New("")
 	tpl, err := tpl.Parse(DeleteSQL)
 	if err != nil {
-		Log.Trace(err)
-		return "", err
+		return "", liberr.Wrap(err)
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
@@ -750,8 +707,7 @@ func (t Table) deleteSQL(table string, fields []*Field) (string, error) {
 			Pk:    t.PkField(fields),
 		})
 	if err != nil {
-		Log.Trace(err)
-		return "", err
+		return "", liberr.Wrap(err)
 	}
 
 	return bfr.String(), nil
@@ -763,8 +719,7 @@ func (t Table) getSQL(table string, fields []*Field) (string, error) {
 	tpl := template.New("")
 	tpl, err := tpl.Parse(GetSQL)
 	if err != nil {
-		Log.Trace(err)
-		return "", err
+		return "", liberr.Wrap(err)
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
@@ -775,8 +730,7 @@ func (t Table) getSQL(table string, fields []*Field) (string, error) {
 			Fields: fields,
 		})
 	if err != nil {
-		Log.Trace(err)
-		return "", err
+		return "", liberr.Wrap(err)
 	}
 
 	return bfr.String(), nil
@@ -788,8 +742,7 @@ func (t Table) listSQL(table string, fields []*Field, options ListOptions) (stri
 	tpl := template.New("")
 	tpl, err := tpl.Parse(ListSQL)
 	if err != nil {
-		Log.Trace(err)
-		return "", err
+		return "", liberr.Wrap(err)
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
@@ -803,8 +756,7 @@ func (t Table) listSQL(table string, fields []*Field, options ListOptions) (stri
 			Count:    options.Count,
 		})
 	if err != nil {
-		Log.Trace(err)
-		return "", err
+		return "", liberr.Wrap(err)
 	}
 
 	return bfr.String(), nil
@@ -826,7 +778,7 @@ func (t Table) scan(row Row, fields []*Field) error {
 		}
 	}
 
-	return err
+	return liberr.Wrap(err)
 }
 
 //
@@ -874,12 +826,14 @@ func (f *Field) Validate() error {
 	switch f.Value.Kind() {
 	case reflect.String:
 		if f.Revision() {
-			return errors.New("revision must be integer")
+			err := errors.New("revision must be integer")
+			return liberr.Wrap(err)
 		}
 	case reflect.Int,
 		reflect.Int64:
 	default:
-		return errors.New("must be: (string, int)")
+		err := errors.New("must be: (string, int)")
+		return liberr.Wrap(err)
 	}
 
 	return nil

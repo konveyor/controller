@@ -1,11 +1,12 @@
 package web
 
-import "github.com/konveyor/controller/pkg/logging"
+import "github.com/konveyor/controller/pkg/inventory/container"
 
-var Log *logging.Logger
-
-func init() {
-	log := logging.WithName("model")
-	log.Reset()
-	Log = &log
+//
+// Build new web server.
+func New(c *container.Container, routes ...RequestHandler) *WebServer {
+	return &WebServer{
+		Handlers:  routes,
+		Container: c,
+	}
 }
