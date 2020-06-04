@@ -31,7 +31,6 @@ type Paged struct {
 // Prepare the handler to fulfil the request.
 // Set the `token` and `page` fields using passed parameters.
 func (h *Paged) Prepare(ctx *gin.Context) int {
-	Log.Reset()
 	status := h.setPage(ctx)
 	if status != http.StatusOK {
 		return status

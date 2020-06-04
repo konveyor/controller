@@ -7,11 +7,10 @@ import (
 	"reflect"
 )
 
-// Not found error.
-var NotFound = sql.ErrNoRows
-
-// Conflict error.
+//
+// Errors.
 var Conflict = errors.New("conflict")
+var NotFound = sql.ErrNoRows
 
 //
 // Database client interface.

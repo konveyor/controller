@@ -1,6 +1,7 @@
 package container
 
 import (
+	liberr "github.com/konveyor/controller/pkg/error"
 	"github.com/konveyor/controller/pkg/inventory/model"
 	"github.com/konveyor/controller/pkg/ref"
 	core "k8s.io/api/core/v1"
@@ -44,11 +45,8 @@ func (c *Container) Add(object meta.Object, reconciler Reconciler) error {
 	if err != nil {
 		delete(c.content, key)
 		reconciler.Shutdown(false)
-		Log.Trace(err)
-		return err
+		return liberr.Wrap(err)
 	}
-
-	Log.Info("Reconciler added.", "name", reconciler.Name())
 
 	return nil
 }
@@ -60,7 +58,6 @@ func (c *Container) Delete(object meta.Object) {
 	defer c.mutex.Unlock()
 	key := c.key(object)
 	if r, found := c.content[key]; found {
-		Log.Info("Reconciler deleted.", "name", r.Name())
 		delete(c.content, key)
 		r.Shutdown(true)
 	}

@@ -27,15 +27,6 @@ type WebServer struct {
 }
 
 //
-// Build new web server.
-func New(c *container.Container, routes ...RequestHandler) *WebServer {
-	return &WebServer{
-		Handlers:  routes,
-		Container: c,
-	}
-}
-
-//
 // Start the web-server.
 // Initializes `gin` with routes and CORS origins.
 func (w *WebServer) Start() {
@@ -59,18 +50,9 @@ func (w *WebServer) buildOrigins() {
 	for _, r := range w.AllowedOrigins {
 		expr, err := regexp.Compile(r)
 		if err != nil {
-			Log.Error(
-				err,
-				"origin not valid",
-				"expr",
-				r)
 			continue
 		}
 		w.allowedOrigins = append(w.allowedOrigins, expr)
-		Log.Info(
-			"Added allowed origin.",
-			"expr",
-			r)
 	}
 }
 
@@ -90,8 +72,6 @@ func (w *WebServer) allow(origin string) bool {
 			return true
 		}
 	}
-
-	Log.Info("Denied.", "origin", origin)
 
 	return false
 }

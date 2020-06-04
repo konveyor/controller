@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"github.com/onsi/gomega"
 	"math"
@@ -62,7 +63,7 @@ func TestModels(t *testing.T) {
 	err = DB.Update(thing)
 	g.Expect(err).To(gomega.BeNil())
 	err = DB.Update(thing)
-	g.Expect(err).To(gomega.Equal(Conflict))
+	g.Expect(errors.Is(err, Conflict)).To(gomega.BeTrue())
 
 	// Test List
 	list := []Thing{}
@@ -78,7 +79,7 @@ func TestModels(t *testing.T) {
 	err = DB.Insert(thing)
 	g.Expect(err).To(gomega.BeNil())
 	err = DB.Get(thing)
-	g.Expect(err).To(gomega.Equal(NotFound))
+	g.Expect(errors.Is(err, NotFound)).To(gomega.BeTrue())
 	err = tx.Commit()
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(client.tx).To(gomega.BeNil())
@@ -92,11 +93,11 @@ func TestModels(t *testing.T) {
 	err = DB.Insert(thing)
 	g.Expect(err).To(gomega.BeNil())
 	err = DB.Get(thing)
-	g.Expect(err).To(gomega.Equal(NotFound))
+	g.Expect(errors.Is(err, NotFound)).To(gomega.BeTrue())
 	tx.rollback()
 	g.Expect(client.tx).To(gomega.BeNil())
 	err = DB.Get(thing)
-	g.Expect(err).To(gomega.Equal(NotFound))
+	g.Expect(errors.Is(err, NotFound)).To(gomega.BeTrue())
 }
 
 //
@@ -134,7 +135,7 @@ func __TestConcurrency(t *testing.T) {
 			go func() {
 				err := DB.Get(m)
 				if err != nil {
-					if err == NotFound {
+					if errors.Is(err, NotFound) {
 						fmt.Printf("read|%d _____%s\n", i, err)
 					} else {
 						panic(err)
@@ -155,7 +156,7 @@ func __TestConcurrency(t *testing.T) {
 			go func() {
 				err := DB.Delete(m)
 				if err != nil {
-					if err == NotFound {
+					if errors.Is(err, NotFound) {
 						fmt.Printf("del|%d _____%s\n", i, err)
 					} else {
 						panic(err)
@@ -176,7 +177,7 @@ func __TestConcurrency(t *testing.T) {
 			go func() {
 				err := DB.Update(m)
 				if err != nil {
-					if err == NotFound {
+					if errors.Is(err, NotFound) {
 						fmt.Printf("update|%d _____%s\n", i, err)
 					} else {
 						panic(err)
