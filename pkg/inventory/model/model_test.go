@@ -14,6 +14,7 @@ type Thing struct {
 	ID       int    `sql:"key"`
 	Name     string `sql:"key"`
 	Revision int64  `sql:"revision"`
+	labels   Labels
 }
 
 func (m *Thing) Pk() string {
@@ -33,12 +34,15 @@ func (m *Thing) Equals(other Model) bool {
 }
 
 func (m *Thing) Labels() Labels {
-	return nil
+	return m.labels
 }
 
 func TestModels(t *testing.T) {
 	var err error
-	DB := New("/tmp/test.db", &Thing{})
+	DB := New(
+		"/tmp/test.db",
+		&Label{},
+		&Thing{})
 	DB.Open(true)
 	client := DB.(*Client)
 
@@ -48,6 +52,9 @@ func TestModels(t *testing.T) {
 
 	thing := &Thing{
 		ID: 0,
+		labels: Labels{
+			"role": "main",
+		},
 	}
 
 	// Test CRUD.
@@ -70,6 +77,28 @@ func TestModels(t *testing.T) {
 	err = DB.List(thing, ListOptions{}, &list)
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(1))
+
+	// Test List by label.
+	list = []Thing{}
+	err = DB.List(
+		thing,
+		ListOptions{
+			Labels: Labels{
+				"role": "main",
+		}},
+		&list)
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(1))
+	list = []Thing{}
+	err = DB.List(
+		thing,
+		ListOptions{
+			Labels: Labels{
+				"job": "other",
+			}},
+		&list)
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(0))
 
 	// Test Tx - commit
 	thing.ID = 1
