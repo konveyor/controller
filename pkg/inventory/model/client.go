@@ -184,12 +184,20 @@ func (r *Client) Insert(model Model) error {
 	if r.tx == nil {
 		r.mutex.Lock()
 		defer r.mutex.Unlock()
-		table.Db = r.db
+		table.DB = r.db
 	} else {
-		table.Db = r.tx
+		table.DB = r.tx
+	}
+	err := table.Insert(model)
+	if err != nil {
+		return liberr.Wrap(err)
+	}
+	err = r.insertLabels(table, model)
+	if err != nil {
+		return liberr.Wrap(err)
 	}
 
-	return table.Insert(model)
+	return nil
 }
 
 //
@@ -202,12 +210,20 @@ func (r *Client) Update(model Model) error {
 	if r.tx == nil {
 		r.mutex.Lock()
 		defer r.mutex.Unlock()
-		table.Db = r.db
+		table.DB = r.db
 	} else {
-		table.Db = r.tx
+		table.DB = r.tx
+	}
+	err := table.Update(model)
+	if err != nil {
+		return liberr.Wrap(err)
+	}
+	err = r.replaceLabels(table, model)
+	if err != nil {
+		return liberr.Wrap(err)
 	}
 
-	return table.Update(model)
+	return nil
 }
 
 //
@@ -220,12 +236,64 @@ func (r *Client) Delete(model Model) error {
 	if r.tx == nil {
 		r.mutex.Lock()
 		defer r.mutex.Unlock()
-		table.Db = r.db
+		table.DB = r.db
 	} else {
-		table.Db = r.tx
+		table.DB = r.tx
+	}
+	err := table.Delete(model)
+	if err != nil {
+		return liberr.Wrap(err)
+	}
+	err = r.deleteLabels(table, model)
+	if err != nil {
+		return liberr.Wrap(err)
 	}
 
-	return table.Delete(model)
+	return nil
+}
+
+//
+// Insert labels for the model into the DB.
+func (r *Client) insertLabels(table Table, model Model) error {
+	for l, v := range model.Labels() {
+		label := &Label{
+			Parent: model.Pk(),
+			Kind:   table.Name(model),
+			Name:   l,
+			Value:  v,
+		}
+		err := table.Insert(label)
+		if err != nil {
+			return liberr.Wrap(err)
+		}
+	}
+
+	return nil
+}
+
+//
+// Delete labels for a model in the DB.
+func (r *Client) deleteLabels(table Table, model Model) error {
+	return table.Delete(
+		&Label{
+			Kind:   table.Name(model),
+			Parent: model.Pk(),
+		})
+}
+
+//
+// Replace labels.
+func (r *Client) replaceLabels(table Table, model Model) error {
+	err := r.deleteLabels(table, model)
+	if err != nil {
+		return liberr.Wrap(err)
+	}
+	err = r.insertLabels(table, model)
+	if err != nil {
+		return liberr.Wrap(err)
+	}
+
+	return nil
 }
 
 //

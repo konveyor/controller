@@ -179,7 +179,7 @@ LIMIT {{.Options.Page.Limit}} OFFSET {{.Options.Page.Offset}}
 //   const - Not updated.
 type Table struct {
 	// Database connection.
-	Db DBTX
+	DB DBTX
 }
 
 //
@@ -262,7 +262,7 @@ func (t Table) Insert(model interface{}) error {
 		return liberr.Wrap(err)
 	}
 	params := t.Params(fields)
-	r, err := t.Db.Exec(stmt, params...)
+	r, err := t.DB.Exec(stmt, params...)
 	if err != nil {
 		if sql3Err, cast := err.(sqlite3.Error); cast {
 			if sql3Err.Code == sqlite3.ErrConstraint {
@@ -271,18 +271,9 @@ func (t Table) Insert(model interface{}) error {
 		}
 		return liberr.Wrap(err)
 	}
-	nRows, err := r.RowsAffected()
+	_, err = r.RowsAffected()
 	if err != nil {
 		return liberr.Wrap(err)
-	}
-	if nRows == 0 {
-		return nil
-	}
-	if m, cast := model.(Model); cast {
-		err := t.InsertLabels(m)
-		if err != nil {
-			return liberr.Wrap(err)
-		}
 	}
 
 	return nil
@@ -301,7 +292,7 @@ func (t Table) Update(model interface{}) error {
 		return liberr.Wrap(err)
 	}
 	params := t.Params(fields)
-	r, err := t.Db.Exec(stmt, params...)
+	r, err := t.DB.Exec(stmt, params...)
 	if err != nil {
 		return liberr.Wrap(err)
 	}
@@ -314,12 +305,6 @@ func (t Table) Update(model interface{}) error {
 			return liberr.Wrap(Conflict)
 		} else {
 			return liberr.Wrap(NotFound)
-		}
-	}
-	if m, cast := model.(Model); cast {
-		err := t.ReplaceLabels(m)
-		if err != nil {
-			return liberr.Wrap(err)
 		}
 	}
 
@@ -339,7 +324,7 @@ func (t Table) Delete(model interface{}) error {
 		return liberr.Wrap(err)
 	}
 	params := t.Params(fields)
-	r, err := t.Db.Exec(stmt, params...)
+	r, err := t.DB.Exec(stmt, params...)
 	if err != nil {
 		return liberr.Wrap(err)
 	}
@@ -349,12 +334,6 @@ func (t Table) Delete(model interface{}) error {
 	}
 	if nRows == 0 {
 		return nil
-	}
-	if m, cast := model.(Model); cast {
-		err := t.DeleteLabels(m)
-		if err != nil {
-			return liberr.Wrap(err)
-		}
 	}
 
 	return nil
@@ -374,7 +353,7 @@ func (t Table) Get(model interface{}) error {
 		return liberr.Wrap(err)
 	}
 	params := t.Params(fields)
-	row := t.Db.QueryRow(stmt, params...)
+	row := t.DB.QueryRow(stmt, params...)
 	err = t.scan(row, fields)
 
 	return liberr.Wrap(err)
@@ -395,7 +374,7 @@ func (t Table) List(model interface{}, options ListOptions) ([]interface{}, erro
 		return nil, liberr.Wrap(err)
 	}
 	params := t.Params(fields)
-	cursor, err := t.Db.Query(stmt, params...)
+	cursor, err := t.DB.Query(stmt, params...)
 	if err != nil {
 		return nil, liberr.Wrap(err)
 	}
@@ -433,7 +412,7 @@ func (t Table) Count(model interface{}, options ListOptions) (int64, error) {
 	}
 	count := int64(0)
 	params := t.Params(fields)
-	row := t.Db.QueryRow(stmt, params...)
+	row := t.DB.QueryRow(stmt, params...)
 	if err != nil {
 		return 0, liberr.Wrap(err)
 	}
@@ -443,46 +422,6 @@ func (t Table) Count(model interface{}, options ListOptions) (int64, error) {
 	}
 
 	return count, nil
-}
-
-//
-// Insert labels for the model into the DB.
-func (t Table) InsertLabels(model Model) error {
-	for l, v := range model.Labels() {
-		label := &Label{
-			Parent: model.Pk(),
-			Kind:   t.Name(model),
-			Name:   l,
-			Value:  v,
-		}
-		err := t.Insert(label)
-		if err != nil {
-			return liberr.Wrap(err)
-		}
-	}
-
-	return nil
-}
-
-//
-// Delete labels for a model in the DB.
-func (t Table) DeleteLabels(model Model) error {
-	return t.Delete(
-		&Label{
-			Kind:   t.Name(model),
-			Parent: model.Pk(),
-		})
-}
-
-//
-// Replace labels.
-func (t Table) ReplaceLabels(model Model) error {
-	err := t.DeleteLabels(model)
-	if err != nil {
-		return liberr.Wrap(err)
-	}
-
-	return t.InsertLabels(model)
 }
 
 //
