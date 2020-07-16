@@ -24,19 +24,19 @@ type Container struct {
 
 //
 // Get a reconciler by (CR) object.
-func (c *Container) Get(object meta.Object) (Reconciler, bool) {
+func (c *Container) Get(owner meta.Object) (Reconciler, bool) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	p, found := c.content[c.key(object)]
+	p, found := c.content[c.key(owner)]
 	return p, found
 }
 
 //
 // Add a reconciler.
-func (c *Container) Add(object meta.Object, reconciler Reconciler) error {
+func (c *Container) Add(reconciler Reconciler) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	key := c.key(object)
+	key := c.key(reconciler.Owner())
 	if current, found := c.content[key]; found {
 		current.Shutdown(false)
 	}
@@ -53,10 +53,10 @@ func (c *Container) Add(object meta.Object, reconciler Reconciler) error {
 
 //
 // Delete the reconciler.
-func (c *Container) Delete(object meta.Object) {
+func (c *Container) Delete(owner meta.Object) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	key := c.key(object)
+	key := c.key(owner)
 	if r, found := c.content[key]; found {
 		delete(c.content, key)
 		r.Shutdown(true)
@@ -65,11 +65,11 @@ func (c *Container) Delete(object meta.Object) {
 
 //
 // Build a reconciler key for an object.
-func (*Container) key(object meta.Object) Key {
+func (*Container) key(owner meta.Object) Key {
 	return Key{
-		Kind:      ref.ToKind(object),
-		Namespace: object.GetNamespace(),
-		Name:      object.GetName(),
+		Kind:      ref.ToKind(owner),
+		Namespace: owner.GetNamespace(),
+		Name:      owner.GetName(),
 	}
 }
 
@@ -78,6 +78,8 @@ func (*Container) key(object meta.Object) Key {
 type Reconciler interface {
 	// The name.
 	Name() string
+	// The resource that owns the reconciler.
+	Owner() meta.Object
 	// Start the reconciler.
 	Start() error
 	// Shutdown the reconciler.
