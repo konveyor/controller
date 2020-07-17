@@ -14,6 +14,9 @@ type Thing struct {
 	ID       int    `sql:"key"`
 	Name     string `sql:"key"`
 	Revision int64  `sql:"revision"`
+	Int8     int8   `sql:"int8"`
+	Int16    int16  `sql:"int16"`
+	Int32    int32  `sql:"int32"`
 	labels   Labels
 }
 
