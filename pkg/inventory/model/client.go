@@ -29,6 +29,8 @@ type DB interface {
 	Close(bool) error
 	// Get the specified model.
 	Get(Model) error
+	// Get for update of the specified model.
+	GetForUpdate(Model) (*Tx, error)
 	// List models based on `selector` model.
 	List(Model, ListOptions, interface{}) error
 	// Begin a transaction.
@@ -52,7 +54,7 @@ type Client struct {
 	sync.RWMutex
 	// The sqlite3 database will not support
 	// concurrent write operations.
-	mutex sync.Mutex
+	dbMutex sync.Mutex
 	// file path.
 	path string
 	// Model
@@ -125,6 +127,24 @@ func (r *Client) Get(model Model) error {
 }
 
 //
+// Get the model for update.
+// Locks the DB by beginning a transaction.
+// The caller MUST commit/end the returned Tx.
+func (r *Client) GetForUpdate(model Model) (*Tx, error) {
+	tx, err := r.Begin()
+	if err != nil {
+		return nil, liberr.Wrap(err)
+	}
+	err = Table{r.db}.Get(model)
+	if err != nil {
+		tx.End()
+		tx = nil
+	}
+
+	return tx, err
+}
+
+//
 // List models.
 func (r *Client) List(model Model, options ListOptions, list interface{}) error {
 	lv := reflect.ValueOf(list)
@@ -164,7 +184,7 @@ func (r *Client) List(model Model, options ListOptions, list interface{}) error 
 func (r *Client) Begin() (*Tx, error) {
 	r.Lock()
 	defer r.Unlock()
-	r.mutex.Lock()
+	r.dbMutex.Lock()
 	tx, err := r.db.Begin()
 	if err != nil {
 		return nil, err
@@ -178,11 +198,10 @@ func (r *Client) Begin() (*Tx, error) {
 func (r *Client) Insert(model Model) error {
 	r.Lock()
 	defer r.Unlock()
-	model.SetPk()
 	table := Table{}
 	if r.tx == nil {
-		r.mutex.Lock()
-		defer r.mutex.Unlock()
+		r.dbMutex.Lock()
+		defer r.dbMutex.Unlock()
 		table.DB = r.db
 	} else {
 		table.DB = r.tx
@@ -208,16 +227,20 @@ func (r *Client) Insert(model Model) error {
 func (r *Client) Update(model Model) error {
 	r.Lock()
 	defer r.Unlock()
-	model.SetPk()
 	table := Table{}
 	if r.tx == nil {
-		r.mutex.Lock()
-		defer r.mutex.Unlock()
+		r.dbMutex.Lock()
+		defer r.dbMutex.Unlock()
 		table.DB = r.db
 	} else {
 		table.DB = r.tx
 	}
-	err := table.Update(model)
+	current := r.journal.copy(model)
+	err := table.Get(current)
+	if err != nil {
+		return liberr.Wrap(err)
+	}
+	err = table.Update(model)
 	if err != nil {
 		return liberr.Wrap(err)
 	}
@@ -225,7 +248,7 @@ func (r *Client) Update(model Model) error {
 	if err != nil {
 		return liberr.Wrap(err)
 	}
-	r.journal.Updated(model)
+	r.journal.Updated(current, model)
 	if r.tx == nil {
 		r.journal.Commit()
 	}
@@ -238,11 +261,10 @@ func (r *Client) Update(model Model) error {
 func (r *Client) Delete(model Model) error {
 	r.Lock()
 	defer r.Unlock()
-	model.SetPk()
 	table := Table{}
 	if r.tx == nil {
-		r.mutex.Lock()
-		defer r.mutex.Unlock()
+		r.dbMutex.Lock()
+		defer r.dbMutex.Unlock()
 		table.DB = r.db
 	} else {
 		table.DB = r.tx
@@ -325,11 +347,24 @@ func (r *Client) insertLabels(table Table, model Model) error {
 //
 // Delete labels for a model in the DB.
 func (r *Client) deleteLabels(table Table, model Model) error {
-	return table.Delete(
-		&Label{
-			Kind:   table.Name(model),
-			Parent: model.Pk(),
+	list, err := table.List(
+		&Label{},
+		ListOptions{
+			Predicate: And(
+				Eq("Kind", table.Name(model)),
+				Eq("Parent", model.Pk())),
 		})
+	if err != nil {
+		return liberr.Wrap(err)
+	}
+	for _, label := range list {
+		err := table.Delete(label)
+		if err != nil {
+			return liberr.Wrap(err)
+		}
+	}
+
+	return nil
 }
 
 //
@@ -358,7 +393,7 @@ func (r *Client) commit(tx *Tx) error {
 		return liberr.Wrap(TxInvalidError)
 	}
 	defer func() {
-		r.mutex.Unlock()
+		r.dbMutex.Unlock()
 		r.tx = nil
 	}()
 	err := r.tx.Commit()
@@ -382,7 +417,7 @@ func (r *Client) end(tx *Tx) error {
 		return liberr.Wrap(TxInvalidError)
 	}
 	defer func() {
-		r.mutex.Unlock()
+		r.dbMutex.Unlock()
 		r.tx = nil
 	}()
 	err := r.tx.Rollback()
