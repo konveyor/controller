@@ -11,15 +11,15 @@ import (
 )
 
 type TestObject struct {
-	PK       string `sql:"pk,generated(id)"`
-	ID       int    `sql:"key"`
-	Name     string `sql:""`
-	Age      int    `sql:""`
-	Int8     int8   `sql:""`
-	Int16    int16  `sql:""`
-	Int32    int32  `sql:""`
-	Bool     bool   `sql:""`
-	labels   Labels
+	PK     string `sql:"pk,generated(id)"`
+	ID     int    `sql:"key"`
+	Name   string `sql:""`
+	Age    int    `sql:""`
+	Int8   int8   `sql:""`
+	Int16  int16  `sql:""`
+	Int32  int32  `sql:""`
+	Bool   bool   `sql:""`
+	labels Labels
 }
 
 func (m *TestObject) Pk() string {
@@ -216,24 +216,23 @@ func TestList(t *testing.T) {
 	}
 	// List all.
 	list := []TestObject{}
-	err = DB.List(&TestObject{}, ListOptions{}, &list)
+	err = DB.List(&list, ListOptions{})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(10))
 	// List = (single).
 	list = []TestObject{}
 	err = DB.List(
-		&TestObject{},
+		&list,
 		ListOptions{
 			Predicate: Eq("ID", 0),
-		},
-		&list)
+		})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(1))
 	g.Expect(list[0].ID).To(gomega.Equal(0))
 	// List != AND
 	list = []TestObject{}
 	err = DB.List(
-		&TestObject{},
+		&list,
 		ListOptions{
 			Predicate: And( // Even only.
 				Neq("ID", 1),
@@ -241,8 +240,7 @@ func TestList(t *testing.T) {
 				Neq("ID", 5),
 				Neq("ID", 7),
 				Neq("ID", 9)),
-		},
-		&list)
+		})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(5))
 	g.Expect(list[0].ID).To(gomega.Equal(0))
@@ -253,13 +251,12 @@ func TestList(t *testing.T) {
 	// List OR =.
 	list = []TestObject{}
 	err = DB.List(
-		&TestObject{},
+		&list,
 		ListOptions{
 			Predicate: Or(
 				Eq("ID", 0),
 				Eq("ID", 6)),
-		},
-		&list)
+		})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(2))
 	g.Expect(list[0].ID).To(gomega.Equal(0))
@@ -267,11 +264,10 @@ func TestList(t *testing.T) {
 	// List < (lt).
 	list = []TestObject{}
 	err = DB.List(
-		&TestObject{},
+		&list,
 		ListOptions{
 			Predicate: Lt("ID", 2),
-		},
-		&list)
+		})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(2))
 	g.Expect(list[0].ID).To(gomega.Equal(0))
@@ -279,11 +275,10 @@ func TestList(t *testing.T) {
 	// List > (gt).
 	list = []TestObject{}
 	err = DB.List(
-		&TestObject{},
+		&list,
 		ListOptions{
 			Predicate: Gt("ID", 7),
-		},
-		&list)
+		})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(2))
 	g.Expect(list[0].ID).To(gomega.Equal(8))
@@ -291,14 +286,13 @@ func TestList(t *testing.T) {
 	// By label.
 	list = []TestObject{}
 	err = DB.List(
-		&TestObject{},
+		&list,
 		ListOptions{
 			Sort: []int{2},
 			Predicate: Or(
 				Match(Labels{"id": "v4"}),
 				Eq("ID", 8)),
-		},
-		&list)
+		})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(2))
 	g.Expect(list[0].ID).To(gomega.Equal(4))
@@ -331,7 +325,7 @@ func TestWatch(t *testing.T) {
 	}
 	// Handler B
 	handlerB := &TestHandler{name: "B"}
-	watchB, err := DB.Watch(&TestObject{}, handlerA)
+	watchB, err := DB.Watch(&TestObject{}, handlerB)
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(watchB).ToNot(gomega.BeNil())
 	// Update
@@ -357,7 +351,7 @@ func TestWatch(t *testing.T) {
 		g.Expect(err).To(gomega.BeNil())
 	}
 	for i := 0; i < N; i++ {
-		time.Sleep(time.Second)
+		time.Sleep(time.Millisecond * 10)
 		if len(handlerA.created) != N ||
 			len(handlerA.updated) != N ||
 			len(handlerA.created) != N ||
@@ -365,7 +359,6 @@ func TestWatch(t *testing.T) {
 			len(handlerB.updated) != N ||
 			len(handlerB.created) != N ||
 			len(handlerC.created) != N ||
-			len(handlerC.updated) != N ||
 			len(handlerC.created) != N {
 			continue
 		} else {

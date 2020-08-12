@@ -32,7 +32,7 @@ type DB interface {
 	// Get for update of the specified model.
 	GetForUpdate(Model) (*Tx, error)
 	// List models based on `selector` model.
-	List(Model, ListOptions, interface{}) error
+	List(interface{}, ListOptions) error
 	// Begin a transaction.
 	Begin() (*Tx, error)
 	// Insert a model.
@@ -146,31 +146,9 @@ func (r *Client) GetForUpdate(model Model) (*Tx, error) {
 
 //
 // List models.
-func (r *Client) List(model Model, options ListOptions, list interface{}) error {
-	lv := reflect.ValueOf(list)
-	lt := reflect.TypeOf(list)
-	switch lt.Kind() {
-	case reflect.Ptr:
-		lv = lv.Elem()
-		lt = lt.Elem()
-	default:
-		return nil
-	}
-	switch lv.Kind() {
-	case reflect.Slice:
-		l, err := Table{r.db}.List(model, options)
-		if err != nil {
-			return liberr.Wrap(err)
-		}
-		concrete := reflect.MakeSlice(lt, 0, 0)
-		for i := 0; i < len(l); i++ {
-			m := reflect.ValueOf(l[i]).Elem()
-			concrete = reflect.Append(concrete, m)
-		}
-		lv.Set(concrete)
-	}
-
-	return nil
+// The `list` must be: *[]Model.
+func (r *Client) List(list interface{}, options ListOptions) error {
+	return Table{r.db}.List(list, options)
 }
 
 //
@@ -300,7 +278,7 @@ func (r *Client) Watch(model Model, handler EventHandler) (*Watch, error) {
 		return nil, liberr.Wrap(err)
 	}
 	listPtr := reflect.New(reflect.SliceOf(mt))
-	err = r.List(model, ListOptions{}, listPtr.Interface())
+	err = Table{r.db}.List(listPtr.Interface(), ListOptions{})
 	if err != nil {
 		return nil, liberr.Wrap(err)
 	}
@@ -347,8 +325,9 @@ func (r *Client) insertLabels(table Table, model Model) error {
 //
 // Delete labels for a model in the DB.
 func (r *Client) deleteLabels(table Table, model Model) error {
-	list, err := table.List(
-		&Label{},
+	list := []Label{}
+	err := table.List(
+		&list,
 		ListOptions{
 			Predicate: And(
 				Eq("Kind", table.Name(model)),
@@ -358,7 +337,7 @@ func (r *Client) deleteLabels(table Table, model Model) error {
 		return liberr.Wrap(err)
 	}
 	for _, label := range list {
-		err := table.Delete(label)
+		err := table.Delete(&label)
 		if err != nil {
 			return liberr.Wrap(err)
 		}

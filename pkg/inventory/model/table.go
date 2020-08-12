@@ -126,17 +126,19 @@ LIMIT {{.Page.Limit}} OFFSET {{.Page.Offset}}
 // Errors
 var (
 	// Must have PK.
-	MustHavePkErr = liberr.New("must have PK field.")
+	MustHavePkErr = liberr.New("must have PK field")
 	// Parameter must be pointer error.
 	MustBePtrErr = liberr.New("must be pointer")
+	// Must be slice pointer.
+	MustBeSlicePtrErr = liberr.New("must be slice pointer")
 	// Parameter must be struct error.
 	MustBeObjectErr = liberr.New("must be object")
 	// Field type error.
-	FieldTypeErr = liberr.New("field type must be (integer, string, bool")
+	FieldTypeErr = liberr.New("field type must be (int, str, bool")
 	// PK field type error.
-	PkTypeErr = liberr.New("pk field must be (integer, string)")
+	PkTypeErr = liberr.New("pk field must be (int, str)")
 	// Generated PK error.
-	GenPkTypeErr = liberr.New("PK field must be `string` when generated")
+	GenPkTypeErr = liberr.New("PK field must be `str` when generated")
 	// Invalid field referenced in predicate.
 	PredicateRefErr = liberr.New("predicate referenced unknown field")
 	// Invalid predicate for type of field.
@@ -354,25 +356,39 @@ func (t Table) Get(model interface{}) error {
 
 //
 // List the model in the DB.
-// Qualified by the model field values and list options.
-// Expects natural keys to be set.
-// Else, ALL models fetched.
-func (t Table) List(model interface{}, options ListOptions) ([]interface{}, error) {
+// Qualified by the list options.
+func (t Table) List(list interface{}, options ListOptions) error {
+	var model interface{}
+	lt := reflect.TypeOf(list)
+	lv := reflect.ValueOf(list)
+	switch lt.Kind() {
+	case reflect.Ptr:
+		lt = lt.Elem()
+		lv = lv.Elem()
+	default:
+		return MustBeSlicePtrErr
+	}
+	switch lt.Kind() {
+	case reflect.Slice:
+		model = reflect.New(lt.Elem()).Interface()
+	default:
+		return MustBeSlicePtrErr
+	}
 	fields, err := t.Fields(model)
 	if err != nil {
-		return nil, liberr.Wrap(err)
+		return liberr.Wrap(err)
 	}
 	stmt, err := t.listSQL(t.Name(model), fields, &options)
 	if err != nil {
-		return nil, liberr.Wrap(err)
+		return liberr.Wrap(err)
 	}
 	params := append(t.Params(fields), options.Params()...)
 	cursor, err := t.DB.Query(stmt, params...)
 	if err != nil {
-		return nil, liberr.Wrap(err)
+		return liberr.Wrap(err)
 	}
 	defer cursor.Close()
-	list := []interface{}{}
+	mList := reflect.MakeSlice(lt, 0, 0)
 	for cursor.Next() {
 		mt := reflect.TypeOf(model)
 		mPtr := reflect.New(mt.Elem())
@@ -380,12 +396,14 @@ func (t Table) List(model interface{}, options ListOptions) ([]interface{}, erro
 		newFields, _ := t.Fields(mInt)
 		err = t.scan(cursor, newFields)
 		if err != nil {
-			return nil, liberr.Wrap(err)
+			return liberr.Wrap(err)
 		}
-		list = append(list, mInt)
+		mList = reflect.Append(mList, mPtr.Elem())
 	}
 
-	return list, nil
+	lv.Set(mList)
+
+	return nil
 }
 
 //
