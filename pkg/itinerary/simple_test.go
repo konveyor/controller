@@ -15,7 +15,7 @@ var (
 type TestPredicate struct {
 }
 
-func (p *TestPredicate) Allowed(f Flag) (bool, error) {
+func (p *TestPredicate) Evaluate(f Flag) (bool, error) {
 	switch f {
 	case p1:
 		return false, nil
@@ -71,7 +71,6 @@ func TestNext(t *testing.T) {
 	next, done, err = itinerary.Next(next.Name)
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(done).To(gomega.BeTrue())
-	g.Expect(next).To(gomega.BeNil())
 }
 
 func TestNextWithPredicate(t *testing.T) {
@@ -103,10 +102,79 @@ func TestNextWithPredicate(t *testing.T) {
 	next, done, err = itinerary.Next(next.Name)
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(done).To(gomega.BeTrue())
-	g.Expect(next).To(gomega.BeNil())
 
 	// Step Not Found
 	next, done, err = itinerary.Next("unknown")
 	g.Expect(errors.Is(err, StepNotFound)).To(gomega.BeTrue())
 
+}
+
+func TestFirst(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	itinerary := Itinerary{
+		Name: "Test",
+		Pipeline: Pipeline{
+			Step{Name: "ONE"},
+			Step{Name: "ONE-1", All: p1},
+			Step{Name: "TWO", All: p2 | p3},
+			Step{Name: "THREE", Any: p1 | p2},
+		},
+	}
+
+	itinerary.Predicate = &TestPredicate{}
+
+	// First
+	step, err := itinerary.First()
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(step.Name).To(gomega.Equal("ONE"))
+}
+
+func TestList(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	itinerary := Itinerary{
+		Name: "Test",
+		Pipeline: Pipeline{
+			Step{Name: "ONE"},
+			Step{Name: "ONE-1", All: p1},
+			Step{Name: "TWO", All: p2 | p3},
+			Step{Name: "THREE", Any: p1 | p2},
+		},
+	}
+
+	itinerary.Predicate = &TestPredicate{}
+
+	list, err := itinerary.List()
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(3))
+	g.Expect(list[0].Name).To(gomega.Equal("ONE"))
+	g.Expect(list[1].Name).To(gomega.Equal("TWO"))
+	g.Expect(list[2].Name).To(gomega.Equal("THREE"))
+}
+
+func TestProgress(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	itinerary := Itinerary{
+		Name: "Test",
+		Pipeline: Pipeline{
+			Step{Name: "ONE"},
+			Step{Name: "ONE-1", All: p1},
+			Step{Name: "TWO", All: p2 | p3},
+			Step{Name: "THREE", Any: p1 | p2},
+		},
+	}
+
+	itinerary.Predicate = &TestPredicate{}
+
+	// First
+	list, err := itinerary.List()
+	g.Expect(err).To(gomega.BeNil())
+	for i, step := range list {
+		report, err := itinerary.Progress(step.Name)
+		g.Expect(err).To(gomega.BeNil())
+		g.Expect(report.Total).To(gomega.Equal(len(list)))
+		g.Expect(report.Completed).To(gomega.Equal(i))
+	}
 }

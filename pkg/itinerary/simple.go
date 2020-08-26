@@ -14,7 +14,9 @@ type Flag = int16
 // Predicate.
 // Flags delegated to the predicate.
 type Predicate interface {
-	Allowed(Flag) (bool, error)
+	// Evaluate the condition.
+	// Returns (true) when the step should be included.
+	Evaluate(Flag) (bool, error)
 }
 
 //
@@ -49,62 +51,110 @@ var (
 )
 
 //
-// Get the current step.
-func (r *Itinerary) Get(name string) (*Step, error) {
-	for i := 0; i < len(r.Pipeline); i++ {
-		step := &r.Pipeline[i]
+// Get a step by name.
+func (r *Itinerary) Get(name string) (step Step, err error) {
+	for _, step = range r.Pipeline {
 		if step.Name == name {
-			return step, nil
+			return
 		}
 	}
 
-	return nil, StepNotFound
+	err = StepNotFound
+	return
+}
+
+//
+// Get the first step filtered by predicate.
+func (r *Itinerary) First() (step Step, err error) {
+	list, pErr := r.List()
+	if pErr != nil {
+		err = liberr.Wrap(pErr)
+		return
+	}
+	if len(list) > 0 {
+		step = list[0]
+	} else {
+		err = StepNotFound
+	}
+
+	return
+}
+
+// List of steps filtered by predicates.
+func (r *Itinerary) List() (pipeline Pipeline, err error) {
+	for _, step := range r.Pipeline {
+		pTrue, pErr := r.hasAny(step)
+		if pErr != nil {
+			err = liberr.Wrap(pErr)
+			return
+		}
+		if !pTrue {
+			continue
+		}
+		pTrue, pErr = r.hasAll(step)
+		if pErr != nil {
+			err = liberr.Wrap(pErr)
+			return
+		}
+		if !pTrue {
+			continue
+		}
+
+		pipeline = append(pipeline, step)
+	}
+
+	return
 }
 
 //
 // Get the next step in the itinerary.
-func (r *Itinerary) Next(name string) (next *Step, done bool, err error) {
-	current := -1
-	for i := 0; i < len(r.Pipeline); i++ {
-		step := &r.Pipeline[i]
-		if step.Name == name {
-			current = i
-		}
-	}
-	if current == -1 {
-		err = StepNotFound
+func (r *Itinerary) Next(name string) (next Step, done bool, err error) {
+	current, pErr := r.Get(name)
+	if pErr != nil {
+		err = liberr.Wrap(pErr)
 		return
 	}
-	for i := current + 1; i < len(r.Pipeline); i++ {
-		step := &r.Pipeline[i]
-		allowed, pErr := r.hasAny(step)
-		if pErr != nil {
-			err = pErr
-			return
-		}
-		if !allowed {
-			continue
-		}
-		allowed, pErr = r.hasAll(step)
-		if pErr != nil {
-			err = pErr
-			return
-		}
-		if !allowed {
-			continue
-		}
-
-		next = step
+	list, pErr := r.List()
+	if pErr != nil {
+		err = liberr.Wrap(pErr)
 		return
+	}
+	matched := false
+	for _, step := range list {
+		if matched {
+			next = step
+			return
+		}
+		if step.Name == current.Name {
+			matched = true
+		}
 	}
 
 	done = true
 	return
 }
 
+// Build a progress report.
+func (r *Itinerary) Progress(step string) (report Progress, err error) {
+	list, err := r.List()
+	if err != nil {
+		return
+	}
+	report.Total = len(list)
+	for _, s := range list {
+		if s.Name != step {
+			report.Completed++
+		} else {
+			break
+		}
+	}
+
+	return
+}
+
 //
 // The step has satisfied ANY of the predicates.
-func (r *Itinerary) hasAny(step *Step) (allowed bool, err error) {
+func (r *Itinerary) hasAny(step Step) (pTrue bool, err error) {
 	for i := 0; i < 16; i++ {
 		flag := Flag(1 << i)
 		if (step.Any & flag) == 0 {
@@ -113,19 +163,19 @@ func (r *Itinerary) hasAny(step *Step) (allowed bool, err error) {
 		if r.Predicate == nil {
 			continue
 		}
-		allowed, err = r.Predicate.Allowed(flag)
-		if allowed || err != nil {
+		pTrue, err = r.Predicate.Evaluate(flag)
+		if pTrue || err != nil {
 			return
 		}
 	}
 
-	allowed = true
+	pTrue = true
 	return
 }
 
 //
 // The step has satisfied ALL of the predicates.
-func (r *Itinerary) hasAll(step *Step) (allowed bool, err error) {
+func (r *Itinerary) hasAll(step Step) (pTrue bool, err error) {
 	for i := 0; i < 16; i++ {
 		flag := Flag(1 << i)
 		if (step.All & flag) == 0 {
@@ -134,12 +184,21 @@ func (r *Itinerary) hasAll(step *Step) (allowed bool, err error) {
 		if r.Predicate == nil {
 			continue
 		}
-		allowed, err = r.Predicate.Allowed(flag)
-		if !allowed || err != nil {
+		pTrue, err = r.Predicate.Evaluate(flag)
+		if !pTrue || err != nil {
 			return
 		}
 	}
 
-	allowed = true
+	pTrue = true
 	return
+}
+
+//
+// Progress report.
+type Progress struct {
+	// Completed units.
+	Completed int `json:"completed"`
+	// Total units.
+	Total int `json:"total"`
 }
