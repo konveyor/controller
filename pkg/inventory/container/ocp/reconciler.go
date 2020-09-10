@@ -1,6 +1,7 @@
 package ocp
 
 import (
+	"context"
 	liberr "github.com/konveyor/controller/pkg/error"
 	libmodel "github.com/konveyor/controller/pkg/inventory/model"
 	"github.com/konveyor/controller/pkg/logging"
@@ -35,6 +36,8 @@ type Reconciler struct {
 	db libmodel.DB
 	// Credentials secret.
 	secret *core.Secret
+	// Event logger.
+	log *logging.Logger
 	// Collections
 	collections []Collection
 	// The k8s client.
@@ -52,8 +55,8 @@ type Reconciler struct {
 	versionThreshold uint64
 	// The reconciler has (initial) consistency.
 	consistent bool
-	// Event logger.
-	log *logging.Logger
+	// cancel function.
+	cancel func()
 }
 
 //
@@ -127,6 +130,12 @@ func (r *Reconciler) Start() (err error) {
 	r.versionThreshold = 0
 	r.eventChannel = make(chan ModelEvent, 100)
 	r.stopChannel = make(chan struct{})
+	defer func() {
+		if err != nil {
+			close(r.stopChannel)
+			close(r.eventChannel)
+		}
+	}()
 	for _, collection := range r.collections {
 		collection.Bind(r)
 	}
@@ -141,8 +150,10 @@ func (r *Reconciler) Start() (err error) {
 		return
 	}
 	go r.manager.Start(r.stopChannel)
+	ctx := context.Background()
+	ctx, r.cancel = context.WithCancel(ctx)
 	for _, collection := range r.collections {
-		err = collection.Reconcile()
+		err = collection.Reconcile(ctx)
 		if err != nil {
 			err = liberr.Wrap(err)
 			return
@@ -156,12 +167,13 @@ func (r *Reconciler) Start() (err error) {
 
 //
 // Shutdown the reconciler.
-func (r *Reconciler) Shutdown(purge bool) {
+func (r *Reconciler) Shutdown() {
+	r.log.Info("Shutdown", "name", r.Name())
 	close(r.stopChannel)
 	close(r.eventChannel)
-	r.db.Close(true)
-
-	r.log.Info("Shutdown", "name", r.Name())
+	if r.cancel != nil {
+		r.cancel()
+	}
 }
 
 //
