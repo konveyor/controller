@@ -46,36 +46,47 @@ func (c *Container) List() []Reconciler {
 
 //
 // Add a reconciler.
-func (c *Container) Add(reconciler Reconciler) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	key := c.key(reconciler.Owner())
-	if _, found := c.content[key]; found {
-		return liberr.New("duplicate")
+func (c *Container) Add(reconciler Reconciler) (err error) {
+	add := func() {
+		c.mutex.Lock()
+		defer c.mutex.Unlock()
+		key := c.key(reconciler.Owner())
+		if _, found := c.content[key]; found {
+			err = liberr.New("duplicate")
+			return
+		}
+		c.content[key] = reconciler
 	}
-	c.content[key] = reconciler
-	err := reconciler.Start()
+	add()
 	if err != nil {
-		delete(c.content, key)
+		return
+	}
+	err = reconciler.Start()
+	if err != nil {
 		return liberr.Wrap(err)
 	}
 
-	return nil
+	return
 }
 
 //
 // Replace a reconciler.
 func (c *Container) Replace(reconciler Reconciler) (p Reconciler, found bool, err error) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	key := c.key(reconciler.Owner())
-	if p, found := c.content[key]; found {
-		p.Shutdown()
+	replace := func() {
+		c.mutex.Lock()
+		defer c.mutex.Unlock()
+		key := c.key(reconciler.Owner())
+		if p, found := c.content[key]; found {
+			p.Shutdown()
+		}
+		c.content[key] = reconciler
 	}
-	c.content[key] = reconciler
+	replace()
+	if err != nil {
+		return
+	}
 	err = reconciler.Start()
 	if err != nil {
-		delete(c.content, key)
 		err = liberr.Wrap(err)
 	}
 
@@ -114,8 +125,12 @@ type Reconciler interface {
 	// The resource that owns the reconciler.
 	Owner() meta.Object
 	// Start the reconciler.
+	// Expected to do basic validation, start a
+	// goroutine and return quickly.
 	Start() error
 	// Shutdown the reconciler.
+	// Expected to disconnect, destroy created resources
+	// and return quickly.
 	Shutdown()
 	// The reconciler has achieved consistency.
 	HasConsistency() bool
