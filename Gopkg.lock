@@ -743,8 +743,7 @@
   version = "kubernetes-1.13.0"
 
 [[projects]]
-  branch = "master"
-  digest = "1:6dc0e912aaeea5f98199e018d3601b4c98b7549afd0cd5ef4ca025911e0a90b2"
+  digest = "1:13eb03444ca0aa569484b348417d8500282794c8de6588a67dc2c722516070d7"
   name = "k8s.io/gengo"
   packages = [
     "args",
