@@ -27,10 +27,6 @@ required = [
   version="=v0.1.10"
 
 [[constraint]]
-  name="sigs.k8s.io/controller-tools"
-  version="v0.1.1"
-
-[[constraint]]
   name = "github.com/go-logr/logr"
   version = "0.1.0"
 

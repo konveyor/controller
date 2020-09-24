@@ -756,7 +756,7 @@
     "types",
   ]
   pruneopts = "UT"
-  revision = "e17681d19d3ac4837a019ece36c2a0ec31ffe985"
+  revision = "51747d6e00da1fc578d5a333a93bb2abcbce7a95"
 
 [[projects]]
   digest = "1:72fd56341405f53c745377e0ebc4abeff87f1a048e0eea6568a20212650f5a82"
