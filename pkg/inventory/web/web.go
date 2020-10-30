@@ -5,6 +5,8 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/konveyor/controller/pkg/inventory/container"
+	"crypto/tls"
+	"net/http"
 	"regexp"
 	"time"
 )
@@ -14,6 +16,8 @@ const (
 	NsParam      = "ns1"
 	NsCollection = "namespaces"
 	Root         = "/" + NsCollection + "/:" + NsParam
+	TlsCert      = "/var/run/secrets/inventory-tls/tls.crt"
+	TlsKey   = "/var/run/secrets/inventory-tls/tls.key"
 )
 
 //
@@ -34,6 +38,7 @@ type WebServer struct {
 //
 // Start the web-server.
 // Initializes `gin` with routes and CORS origins.
+// Creates an http server to handle TLS
 func (w *WebServer) Start() {
 	router := gin.Default()
 	router.Use(cors.New(cors.Config{
