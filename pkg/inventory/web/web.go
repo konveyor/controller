@@ -5,8 +5,6 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/konveyor/controller/pkg/inventory/container"
-	"crypto/tls"
-	"net/http"
 	"regexp"
 	"time"
 )
@@ -16,8 +14,6 @@ const (
 	NsParam      = "ns1"
 	NsCollection = "namespaces"
 	Root         = "/" + NsCollection + "/:" + NsParam
-	TlsCert      = "/var/run/secrets/inventory-tls/tls.crt"
-	TlsKey   = "/var/run/secrets/inventory-tls/tls.key"
 )
 
 //
@@ -33,6 +29,15 @@ type WebServer struct {
 	Handlers []RequestHandler
 	// Compiled CORS origins.
 	allowedOrigins []*regexp.Regexp
+	// TLS.
+	TLS struct {
+		// Enabled.
+		Enabled bool
+		// Certificate path.
+		Certificate string
+		// Key path
+		Key string
+	}
 }
 
 //
@@ -50,14 +55,22 @@ func (w *WebServer) Start() {
 	}))
 	w.buildOrigins()
 	w.addRoutes(router)
-	go router.Run(w.address())
+	if w.TLS.Enabled {
+		go router.RunTLS(w.address(), w.TLS.Certificate, w.TLS.Key)
+	} else {
+		go router.Run(w.address())
+	}
 }
 
 //
 // Determine the address.
 func (w *WebServer) address() string {
 	if w.Port == 0 {
-		w.Port = 8080
+		if w.TLS.Enabled {
+			w.Port = 8443
+		} else {
+			w.Port = 8080
+		}
 	}
 
 	return fmt.Sprintf(":%d", w.Port)
