@@ -1,4 +1,5 @@
 GOOS ?= `go env GOOS`
+GOBIN ?= ${GOPATH}/bin
 
 # Run tests
 test: generate fmt vet
