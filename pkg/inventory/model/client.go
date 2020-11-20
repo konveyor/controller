@@ -35,6 +35,8 @@ type DB interface {
 	Delete(Model) error
 	// Watch a model collection.
 	Watch(Model, EventHandler) (*Watch, error)
+	// End a watch.
+	EndWatch(watch *Watch)
 	// The journal
 	Journal() *Journal
 }
@@ -97,6 +99,7 @@ func (r *Client) Close(purge bool) error {
 	if r.db == nil {
 		return nil
 	}
+	r.journal.Disable()
 	err := r.db.Close()
 	if err != nil {
 		return liberr.Wrap(err)
@@ -246,6 +249,12 @@ func (r *Client) Watch(model Model, handler EventHandler) (*Watch, error) {
 	watch.Start()
 
 	return watch, nil
+}
+
+//
+// End watch.
+func (r *Client) EndWatch(watch *Watch) {
+	r.journal.End(watch)
 }
 
 //
