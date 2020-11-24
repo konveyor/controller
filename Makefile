@@ -11,7 +11,7 @@ fmt:
 
 # Run go vet against code
 vet:
-	go vet ./pkg/...
+	go vet -structtag=false ./pkg/...
 
 # Generate code
 generate: controller-gen
