@@ -51,7 +51,7 @@ type Condition struct {
 	// A list of items referenced in the `Message`.
 	Items []string `json:"items,omitempty"`
 	// A condition has been explicitly set/updated.
-	staged bool
+	staged bool `json:"-"`
 }
 
 //
@@ -103,7 +103,7 @@ func (r *Condition) Equal(other Condition) bool {
 //
 type Conditions struct {
 	List    []Condition `json:"conditions"`
-	staging bool
+	staging bool        `json:"-"`
 }
 
 //
