@@ -1,4 +1,4 @@
-module github.com/konveyor/mig-controller
+module github.com/konveyor/controller
 
 go 1.14
 
@@ -16,7 +16,6 @@ require (
 	github.com/googleapis/gnostic v0.2.0 // indirect
 	github.com/gregjones/httpcache v0.0.0-20190611155906-901d90724c79 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
-	github.com/konveyor/controller v0.1.0
 	github.com/kr/pretty v0.2.0 // indirect
 	github.com/mattn/go-sqlite3 v1.14.4
 	github.com/onsi/ginkgo v1.10.2 // indirect
