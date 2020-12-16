@@ -381,7 +381,7 @@ func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 	case 0x01: // Create
 		if version > rl.versionThreshold {
 			rl.log.Info("Create", ref.ToKind(r.model), r.model.String())
-			err = rl.db.Insert(r.model)
+			err = tx.Insert(r.model)
 			if err != nil {
 				err = liberr.Wrap(err)
 				return
@@ -390,7 +390,7 @@ func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 	case 0x02: // Update
 		if version > rl.versionThreshold {
 			rl.log.Info("Update", ref.ToKind(r.model), r.model.String())
-			err = rl.db.Update(r.model)
+			err = tx.Update(r.model)
 			if err != nil {
 				err = liberr.Wrap(err)
 				return
@@ -398,7 +398,7 @@ func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 		}
 	case 0x04: // Delete
 		rl.log.Info("Delete", ref.ToKind(r.model), r.model.String())
-		err = rl.db.Delete(r.model)
+		err = tx.Delete(r.model)
 		if err != nil {
 			err = liberr.Wrap(err)
 			return
