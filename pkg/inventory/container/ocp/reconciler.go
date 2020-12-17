@@ -285,7 +285,9 @@ func (r *Reconciler) Delete(m libmodel.Model) {
 func (r *Reconciler) buildManager() (err error) {
 	r.manager, err = manager.New(
 		r.cluster.RestCfg(r.secret),
-		manager.Options{})
+		manager.Options{
+			MetricsBindAddress: "0",
+		})
 	if err != nil {
 		err = liberr.Wrap(err)
 		return
