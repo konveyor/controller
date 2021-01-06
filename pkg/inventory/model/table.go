@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	liberr "github.com/konveyor/controller/pkg/error"
@@ -99,7 +100,7 @@ SELECT
 {{ if .Count -}}
 COUNT(*)
 {{ else -}}
-{{ range $i,$f := .Fields -}}
+{{ range $i,$f := .Options.Fields -}}
 {{ if $i }},{{ end -}}
 {{ $f.Name }}
 {{ end -}}
@@ -215,8 +216,8 @@ func (t Table) DDL(model interface{}) ([]string, error) {
 		bfr,
 		TmplData{
 			Table:       t.Name(model),
+			Fields:      t.RealFields(fields),
 			Constraints: constraints,
-			Fields:      fields,
 		})
 	if err != nil {
 		return nil, liberr.Wrap(err)
@@ -234,7 +235,7 @@ func (t Table) DDL(model interface{}) ([]string, error) {
 			bfr,
 			TmplData{
 				Table:  t.Name(model),
-				Fields: fields,
+				Fields: t.RealFields(fields),
 			})
 		if err != nil {
 			return nil, liberr.Wrap(err)
@@ -394,8 +395,9 @@ func (t Table) List(list interface{}, options ListOptions) error {
 		mt := reflect.TypeOf(model)
 		mPtr := reflect.New(mt.Elem())
 		mInt := mPtr.Interface()
-		newFields, _ := t.Fields(mInt)
-		err = t.scan(cursor, newFields)
+		mFields, _ := t.Fields(mInt)
+		options.fields = mFields
+		err = t.scan(cursor, options.Fields())
 		if err != nil {
 			return liberr.Wrap(err)
 		}
@@ -459,12 +461,25 @@ func (t Table) Fields(model interface{}) ([]*Field, error) {
 		}
 		switch fv.Kind() {
 		case reflect.Struct:
-			nested, err := t.Fields(fv.Addr().Interface())
-			if err != nil {
-				return nil, nil
+			sqlTag, found := ft.Tag.Lookup(Tag)
+			if !found {
+				nested, err := t.Fields(fv.Addr().Interface())
+				if err != nil {
+					return nil, nil
+				}
+				fields = append(fields, nested...)
+			} else {
+				fields = append(
+					fields,
+					&Field{
+						Tag:   sqlTag,
+						Name:  ft.Name,
+						Value: &fv,
+					})
 			}
-			fields = append(fields, nested...)
-		case reflect.String,
+		case reflect.Slice,
+			reflect.Map,
+			reflect.String,
 			reflect.Bool,
 			reflect.Int,
 			reflect.Int8,
@@ -568,6 +583,19 @@ func (t Table) KeyFields(fields []*Field) []*Field {
 }
 
 //
+// Get the non-virtual `Fields` for the model.
+func (t Table) RealFields(fields []*Field) []*Field {
+	list := []*Field{}
+	for _, f := range fields {
+		if !f.Virtual() {
+			list = append(list, f)
+		}
+	}
+
+	return list
+}
+
+//
 // Get the PK field.
 func (t Table) PkField(fields []*Field) *Field {
 	for _, f := range fields {
@@ -625,7 +653,7 @@ func (t Table) insertSQL(table string, fields []*Field) (string, error) {
 		bfr,
 		TmplData{
 			Table:  table,
-			Fields: fields,
+			Fields: t.RealFields(fields),
 		})
 	if err != nil {
 		return "", liberr.Wrap(err)
@@ -819,10 +847,6 @@ type Field struct {
 // Validate.
 func (f *Field) Validate() error {
 	switch f.Value.Kind() {
-	case reflect.Bool:
-		if f.Pk() {
-			return liberr.Wrap(PkTypeErr)
-		}
 	case reflect.String,
 		reflect.Int,
 		reflect.Int8,
@@ -830,7 +854,9 @@ func (f *Field) Validate() error {
 		reflect.Int32,
 		reflect.Int64:
 	default:
-		return liberr.Wrap(FieldTypeErr)
+		if f.Pk() {
+			return liberr.Wrap(PkTypeErr)
+		}
 	}
 
 	return nil
@@ -842,6 +868,35 @@ func (f *Field) Validate() error {
 // model field value.
 func (f *Field) Pull() interface{} {
 	switch f.Value.Kind() {
+	case reflect.Struct:
+		object := f.Value.Interface()
+		b, err := json.Marshal(&object)
+		if err == nil {
+			f.string = string(b)
+		}
+		return f.string
+	case reflect.Slice:
+		if !f.Value.IsNil() {
+			object := f.Value.Interface()
+			b, err := json.Marshal(&object)
+			if err == nil {
+				f.string = string(b)
+			}
+		} else {
+			f.string = "[]"
+		}
+		return f.string
+	case reflect.Map:
+		if !f.Value.IsNil() {
+			object := f.Value.Interface()
+			b, err := json.Marshal(&object)
+			if err == nil {
+				f.string = string(b)
+			}
+		} else {
+			f.string = "{}"
+		}
+		return f.string
 	case reflect.String:
 		f.string = f.Value.String()
 		return f.string
@@ -867,8 +922,6 @@ func (f *Field) Pull() interface{} {
 // Pointer used for Scan().
 func (f *Field) Ptr() interface{} {
 	switch f.Value.Kind() {
-	case reflect.String:
-		return &f.string
 	case reflect.Bool,
 		reflect.Int,
 		reflect.Int8,
@@ -876,9 +929,9 @@ func (f *Field) Ptr() interface{} {
 		reflect.Int32,
 		reflect.Int64:
 		return &f.int
+	default:
+		return &f.string
 	}
-
-	return nil
 }
 
 //
@@ -886,6 +939,30 @@ func (f *Field) Ptr() interface{} {
 // Set the model field value using the `staging` field.
 func (f *Field) Push() {
 	switch f.Value.Kind() {
+	case reflect.Struct:
+		if len(f.string) == 0 {
+			break
+		}
+		tv := reflect.New(f.Value.Type())
+		object := tv.Interface()
+		err := json.Unmarshal([]byte(f.string), &object)
+		if err == nil {
+			tv = reflect.ValueOf(object)
+			f.Value.Set(tv.Elem())
+		}
+	case reflect.Slice,
+		reflect.Map:
+		if len(f.string) == 0 {
+			break
+		}
+		tv := reflect.New(f.Value.Type())
+		object := tv.Interface()
+		err := json.Unmarshal([]byte(f.string), object)
+		if err == nil {
+			tv = reflect.ValueOf(object)
+			tv = reflect.Indirect(tv)
+			f.Value.Set(tv)
+		}
 	case reflect.String:
 		f.Value.SetString(f.string)
 	case reflect.Bool:
@@ -912,8 +989,6 @@ func (f *Field) DDL() string {
 		"",     // constraint
 	}
 	switch f.Value.Kind() {
-	case reflect.String:
-		part[1] = "TEXT"
 	case reflect.Bool,
 		reflect.Int,
 		reflect.Int8,
@@ -921,6 +996,8 @@ func (f *Field) DDL() string {
 		reflect.Int32,
 		reflect.Int64:
 		part[1] = "INTEGER"
+	default:
+		part[1] = "TEXT"
 	}
 	if f.Pk() {
 		part[2] = "PRIMARY KEY"
@@ -948,7 +1025,7 @@ func (f *Field) Pk() bool {
 // Get whether field is mutable.
 // Only mutable fields will be updated.
 func (f *Field) Mutable() bool {
-	if f.Pk() || f.Key() {
+	if f.Pk() || f.Key() || f.Virtual() {
 		return false
 	}
 
@@ -959,6 +1036,14 @@ func (f *Field) Mutable() bool {
 // Get whether field is a natural key.
 func (f *Field) Key() bool {
 	return f.hasOpt("key")
+}
+
+//
+// Get whether field is virtual.
+// A `virtual` field is read-only and managed
+// internally in the DB.
+func (f *Field) Virtual() bool {
+	return f.hasOpt("virtual")
 }
 
 //
@@ -1000,7 +1085,9 @@ func (f *Field) AsValue(object interface{}) (value interface{}, err error) {
 	switch val.Kind() {
 	case reflect.Ptr:
 		val = val.Elem()
-	case reflect.Struct:
+	case reflect.Struct,
+		reflect.Slice,
+		reflect.Map:
 		err = liberr.Wrap(PredicateValueErr)
 		return
 	}
@@ -1027,7 +1114,7 @@ func (f *Field) AsValue(object interface{}) (value interface{}, err error) {
 		case reflect.String:
 			s := val.String()
 			b, pErr := strconv.ParseBool(s)
-			if err != nil {
+			if pErr != nil {
 				err = liberr.Wrap(pErr)
 				return
 			}
@@ -1080,6 +1167,48 @@ func (f *Field) AsValue(object interface{}) (value interface{}, err error) {
 	}
 
 	return
+}
+
+//
+// Get whether the field is `json` encoded.
+func (f *Field) Encoded() (encoded bool) {
+	switch f.Value.Kind() {
+	case reflect.Struct,
+		reflect.Slice,
+		reflect.Map:
+		encoded = true
+	}
+
+	return
+}
+
+//
+// Detail level.
+func (f *Field) Detail() (level int) {
+	for n := 0; n < 10; n++ {
+		if f.hasOpt(fmt.Sprintf("d%d", n)) {
+			return n
+		}
+	}
+	level = 2
+	if f.Pk() || f.Key() || f.Virtual() {
+		level = 0
+	}
+	if f.Encoded() {
+		level = 3
+	}
+
+	return
+}
+
+//
+// Match detail level.
+func (f *Field) MatchDetail(level int) bool {
+	if level == 1 { // ALL
+		return true
+	}
+
+	return f.Detail() <= level
 }
 
 //
@@ -1158,6 +1287,12 @@ type ListOptions struct {
 	Page *Page
 	// Sort by field position.
 	Sort []int
+	// Field detail level.
+	//   0 = core: pk; key and virtual fields.
+	//   1 = all fields.
+	//   2 = plain fields.
+	//   3 = encoded fields.
+	Detail int
 	// Predicate
 	Predicate Predicate
 	// Table (name).
@@ -1191,6 +1326,18 @@ func (l *ListOptions) Param(name string, value interface{}) string {
 	name = fmt.Sprintf("%s%d", name, len(l.params))
 	l.params = append(l.params, sql.Named(name, value))
 	return ":" + name
+}
+
+//
+// Fields filtered by detail level.
+func (l *ListOptions) Fields() (filtered []*Field) {
+	for _, f := range l.fields {
+		if f.MatchDetail(l.Detail) {
+			filtered = append(filtered, f)
+		}
+	}
+
+	return
 }
 
 //
