@@ -13,6 +13,10 @@
 //       Unique index. `G` = unique-together fields.
 //   `sql:"const"`
 //       The field is immutable and not included on update.
+//   `sql:"virtual"`
+//       The field is read-only and managed internally by the DB.
+//   `sql:"dn"`
+//       The field detail level.  n = level number (0-9).
 // Each struct must implement the `Model` interface.
 // Basic CRUD operations may be performed on each model using
 // the `DB` interface which together with the `Model` interface

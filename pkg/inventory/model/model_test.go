@@ -10,15 +10,30 @@ import (
 	"time"
 )
 
+type TestEncoded struct {
+	Name string
+}
+
+type TestBase struct {
+	Parent int    `sql:""`
+	Phone  string `sql:""`
+}
+
 type TestObject struct {
-	PK     string `sql:"pk,generated(id)"`
-	ID     int    `sql:"key"`
-	Name   string `sql:""`
-	Age    int    `sql:""`
-	Int8   int8   `sql:""`
-	Int16  int16  `sql:""`
-	Int32  int32  `sql:""`
-	Bool   bool   `sql:""`
+	TestBase
+	RowID  int64          `sql:"virtual"`
+	PK     string         `sql:"pk,generated(id)"`
+	ID     int            `sql:"key"`
+	Name   string         `sql:""`
+	Age    int            `sql:""`
+	Int8   int8           `sql:""`
+	Int16  int16          `sql:""`
+	Int32  int32          `sql:""`
+	Bool   bool           `sql:""`
+	Object TestEncoded    `sql:""`
+	Slice  []string       `sql:""`
+	Map    map[string]int `sql:""`
+	D4     string         `sql:"d4"`
 	labels Labels
 }
 
@@ -119,13 +134,20 @@ func TestCRUD(t *testing.T) {
 	err = DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
 	objA := &TestObject{
-		ID:    0,
-		Name:  "Elmer",
-		Age:   18,
-		Int8:  8,
-		Int16: 16,
-		Int32: 32,
-		Bool:  true,
+		TestBase: TestBase{
+			Parent: 0,
+			Phone:  "1234",
+		},
+		ID:     0,
+		Name:   "Elmer",
+		Age:    18,
+		Int8:   8,
+		Int16:  16,
+		Int32:  32,
+		Bool:   true,
+		Object: TestEncoded{Name: "json"},
+		Slice:  []string{"hello", "world"},
+		Map:    map[string]int{"A": 1, "B": 2},
 		labels: Labels{
 			"n1": "v1",
 			"n2": "v2",
@@ -140,6 +162,9 @@ func TestCRUD(t *testing.T) {
 		g.Expect(a.Int16).To(gomega.Equal(b.Int16))
 		g.Expect(a.Int32).To(gomega.Equal(b.Int32))
 		g.Expect(a.Bool).To(gomega.Equal(b.Bool))
+		g.Expect(a.Object).To(gomega.Equal(b.Object))
+		g.Expect(a.Slice).To(gomega.Equal(b.Slice))
+		g.Expect(a.Map).To(gomega.Equal(b.Map))
 		for k, v := range objA.labels {
 			l := &Label{
 				Kind:   ref.ToKind(a),
@@ -219,9 +244,20 @@ func TestList(t *testing.T) {
 		&TestObject{})
 	err = DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
-	for i := 0; i < 10; i++ {
+	N := 10
+	for i := 0; i < N; i++ {
 		object := &TestObject{
-			ID: i,
+			ID:     i,
+			Name:   "Elmer",
+			Age:    18,
+			Int8:   8,
+			Int16:  16,
+			Int32:  32,
+			Bool:   true,
+			Object: TestEncoded{Name: "json"},
+			Slice:  []string{"hello", "world"},
+			Map:    map[string]int{"A": 1, "B": 2},
+			D4:     "d-4",
 			labels: Labels{
 				"id": fmt.Sprintf("v%d", i),
 			},
@@ -229,11 +265,43 @@ func TestList(t *testing.T) {
 		err = DB.Insert(object)
 		g.Expect(err).To(gomega.BeNil())
 	}
-	// List all.
+	// List all; detail level=0
 	list := []TestObject{}
 	err = DB.List(&list, ListOptions{})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(10))
+	g.Expect(list[0].Name).To(gomega.Equal(""))
+	g.Expect(list[0].D4).To(gomega.Equal(""))
+	// List detail level=1 (all)
+	list = []TestObject{}
+	err = DB.List(&list, ListOptions{Detail: 1})
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(10))
+	g.Expect(list[0].Name).To(gomega.Equal("Elmer"))
+	g.Expect(list[0].D4).To(gomega.Equal("d-4"))
+	// List detail level=2
+	list = []TestObject{}
+	err = DB.List(&list, ListOptions{Detail: 2})
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(10))
+	g.Expect(list[0].Name).To(gomega.Equal("Elmer"))
+	g.Expect(list[0].Slice).To(gomega.BeNil())
+	// List detail level=3
+	list = []TestObject{}
+	err = DB.List(&list, ListOptions{Detail: 3})
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(10))
+	g.Expect(list[0].Name).To(gomega.Equal("Elmer"))
+	g.Expect(len(list[0].Slice)).To(gomega.Equal(2))
+	g.Expect(list[0].D4).To(gomega.Equal(""))
+	// List detail level=4
+	list = []TestObject{}
+	err = DB.List(&list, ListOptions{Detail: 4})
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(10))
+	g.Expect(list[0].Name).To(gomega.Equal("Elmer"))
+	g.Expect(len(list[0].Slice)).To(gomega.Equal(2))
+	g.Expect(list[0].D4).To(gomega.Equal("d-4"))
 	// List = (single).
 	list = []TestObject{}
 	err = DB.List(
@@ -249,6 +317,7 @@ func TestList(t *testing.T) {
 	err = DB.List(
 		&list,
 		ListOptions{
+			Detail: 2,
 			Predicate: And( // Even only.
 				Neq("ID", 1),
 				Neq("ID", 3),
@@ -298,6 +367,16 @@ func TestList(t *testing.T) {
 	g.Expect(len(list)).To(gomega.Equal(2))
 	g.Expect(list[0].ID).To(gomega.Equal(8))
 	g.Expect(list[1].ID).To(gomega.Equal(9))
+	// List > (gt) virtual.
+	list = []TestObject{}
+	err = DB.List(
+		&list,
+		ListOptions{
+			Predicate: Gt("RowID", N/2),
+		})
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(N / 2))
+	g.Expect(list[0].RowID).To(gomega.Equal(int64(N/2) + 1))
 	// By label.
 	list = []TestObject{}
 	err = DB.List(
