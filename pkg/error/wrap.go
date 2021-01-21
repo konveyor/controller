@@ -46,6 +46,25 @@ func Wrap(err error) error {
 }
 
 //
+// Unwrap an error.
+// Returns: the original error when not wrapped.
+func Unwrap(err error) (out error) {
+	if err == nil {
+		return
+	}
+	out = err
+	for {
+		if wrapped, cast := out.(interface{ Unwrap() error }); cast {
+			out = wrapped.Unwrap()
+		} else {
+			break
+		}
+	}
+
+	return
+}
+
+//
 // Error.
 // Wraps a root cause error and captures
 // the stack.
@@ -77,5 +96,5 @@ func (e Error) Stack() string {
 //
 // Unwrap the error.
 func (e Error) Unwrap() error {
-	return e.wrapped
+	return Unwrap(e.wrapped)
 }
