@@ -80,11 +80,20 @@ func (w *Watch) notify(event *Event) {
 //
 // Run the watch.
 // Forward events to the `handler`.
-func (w *Watch) Start() {
+func (w *Watch) Start(list *reflect.Value) {
 	if w.started {
 		return
 	}
 	run := func() {
+		for i := 0; i < list.Len(); i++ {
+			m := list.Index(i).Addr().Interface()
+			w.Handler.Created(
+				Event{
+					Model:  m.(Model),
+					Action: Created,
+				})
+		}
+		list = nil
 		for event := range w.queue {
 			switch event.Action {
 			case Created:
@@ -115,42 +124,9 @@ func (w *Watch) End() {
 type Journal struct {
 	mutex sync.RWMutex
 	// List of registered watches.
-	watches []*Watch
+	watchList []*Watch
 	// Queue of staged events.
 	staged []*Event
-	// Enabled.
-	enabled bool
-}
-
-//
-// The journal is enabled.
-// Must be enabled for watch models.
-func (r *Journal) Enabled() bool {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	return r.enabled
-}
-
-//
-// Enable the journal.
-func (r *Journal) Enable() {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	r.enabled = true
-}
-
-//
-// Disable the journal.
-// End all watches and discard staged events.
-func (r *Journal) Disable() {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	for _, w := range r.watches {
-		w.End()
-	}
-	r.watches = []*Watch{}
-	r.staged = []*Event{}
-	r.enabled = false
 }
 
 //
@@ -160,14 +136,11 @@ func (r *Journal) Disable() {
 func (r *Journal) Watch(model Model, handler EventHandler) (*Watch, error) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	if !r.enabled {
-		return nil, liberr.New("disabled")
-	}
 	watch := &Watch{
 		Handler: handler,
 		Model:   model,
 	}
-	r.watches = append(r.watches, watch)
+	r.watchList = append(r.watchList, watch)
 	watch.queue = make(chan *Event, 10000)
 	return watch, nil
 }
@@ -177,11 +150,8 @@ func (r *Journal) Watch(model Model, handler EventHandler) (*Watch, error) {
 func (r *Journal) End(watch *Watch) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	if !r.enabled {
-		return
-	}
 	kept := []*Watch{}
-	for _, w := range r.watches {
+	for _, w := range r.watchList {
 		if w != watch {
 			kept = append(kept, w)
 			continue
@@ -189,7 +159,7 @@ func (r *Journal) End(watch *Watch) {
 		w.End()
 	}
 
-	r.watches = kept
+	r.watchList = kept
 }
 
 //
@@ -198,13 +168,13 @@ func (r *Journal) End(watch *Watch) {
 func (r *Journal) Created(model Model) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	if !r.enabled {
+	if !r.hasWatch(model) {
 		return
 	}
 	r.staged = append(
 		r.staged,
 		&Event{
-			Model:  r.copy(model),
+			Model:  Clone(model),
 			Action: Created,
 		})
 }
@@ -215,14 +185,14 @@ func (r *Journal) Created(model Model) {
 func (r *Journal) Updated(model Model, updated Model) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	if !r.enabled {
+	if !r.hasWatch(model) {
 		return
 	}
 	r.staged = append(
 		r.staged,
 		&Event{
-			Model:   r.copy(model),
-			Updated: r.copy(updated),
+			Model:   Clone(model),
+			Updated: Clone(updated),
 			Action:  Updated,
 		})
 }
@@ -233,13 +203,13 @@ func (r *Journal) Updated(model Model, updated Model) {
 func (r *Journal) Deleted(model Model) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	if !r.enabled {
+	if !r.hasWatch(model) {
 		return
 	}
 	r.staged = append(
 		r.staged,
 		&Event{
-			Model:  r.copy(model),
+			Model:  Clone(model),
 			Action: Deleted,
 		})
 }
@@ -249,11 +219,8 @@ func (r *Journal) Deleted(model Model) {
 func (r *Journal) Commit() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	if !r.enabled {
-		return
-	}
 	for _, event := range r.staged {
-		for _, w := range r.watches {
+		for _, w := range r.watchList {
 			w.notify(event)
 		}
 	}
@@ -266,26 +233,18 @@ func (r *Journal) Commit() {
 func (r *Journal) Unstage() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	if !r.enabled {
-		return
-	}
-
 	r.staged = []*Event{}
 }
 
 //
-// Copy the model.
-// The model is a pointer must be protected against being
-// changed at it origin or by the handlers.
-func (r *Journal) copy(model Model) Model {
-	mt := reflect.TypeOf(model)
-	mv := reflect.ValueOf(model)
-	switch mt.Kind() {
-	case reflect.Ptr:
-		mt = mt.Elem()
-		mv = mv.Elem()
+// Model is being watched.
+// Determine if there a watch interested in the model.
+func (r *Journal) hasWatch(model Model) bool {
+	for _, w := range r.watchList {
+		if w.Match(model) {
+			return true
+		}
 	}
-	new := reflect.New(mt).Elem()
-	new.Set(mv)
-	return new.Addr().Interface().(Model)
+
+	return false
 }
