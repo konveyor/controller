@@ -56,8 +56,15 @@ func (m *TestObject) Labels() Labels {
 	return m.labels
 }
 
+// received event.
+type TestEvent struct {
+	action int8
+	model  *TestObject
+}
+
 type TestHandler struct {
 	name    string
+	all     []TestEvent
 	created []int
 	updated []int
 	deleted []int
@@ -67,17 +74,20 @@ type TestHandler struct {
 
 func (w *TestHandler) Created(e Event) {
 	if object, cast := e.Model.(*TestObject); cast {
+		w.all = append(w.all, TestEvent{action: e.Action, model: object})
 		w.created = append(w.created, object.ID)
 	}
 }
 
 func (w *TestHandler) Updated(e Event) {
 	if object, cast := e.Model.(*TestObject); cast {
+		w.all = append(w.all, TestEvent{action: e.Action, model: object})
 		w.updated = append(w.updated, object.ID)
 	}
 }
 func (w *TestHandler) Deleted(e Event) {
 	if object, cast := e.Model.(*TestObject); cast {
+		w.all = append(w.all, TestEvent{action: e.Action, model: object})
 		w.deleted = append(w.deleted, object.ID)
 	}
 }
@@ -409,7 +419,6 @@ func TestWatch(t *testing.T) {
 		&TestObject{})
 	err := DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
-	DB.Journal().Enable()
 	// Handler A
 	handlerA := &TestHandler{name: "A"}
 	watchA, err := DB.Watch(&TestObject{}, handlerA)
@@ -467,6 +476,75 @@ func TestWatch(t *testing.T) {
 			break
 		}
 	}
+	//
+	// The scenario is:
+	// 1. handler A created
+	// 2. (N) models created. handler A should get (N) CREATE events.
+	// 3. handler B created.  handler B should get (N) CREATE events.
+	// 4. (N) models updated. handler A & B should get (N) UPDATE events.
+	// 5. Handler C created.  handler C should get (N) CREATE events.
+	// 6. (N) models deleted. handler A,B,C should get (N) DELETE events.
+	all := []TestEvent{}
+	for _, action := range []int8{Created, Updated, Deleted} {
+		for i := 0; i < N; i++ {
+			all = append(
+				all,
+				TestEvent{
+					action: action,
+					model:  &TestObject{ID: i},
+				})
+		}
+	}
+	g.Expect(func() (eq bool) {
+		h := handlerA
+		if len(all) != len(h.all) {
+			return
+		}
+		for i := 0; i < len(all); i++ {
+			if all[i].action != h.all[i].action ||
+				all[i].model.ID != h.all[i].model.ID {
+				return
+			}
+		}
+		return true
+	}()).To(gomega.BeTrue())
+	g.Expect(func() (eq bool) {
+		h := handlerB
+		if len(all) != len(h.all) {
+			return
+		}
+		for i := 0; i < len(all); i++ {
+			if all[i].action != h.all[i].action ||
+				all[i].model.ID != h.all[i].model.ID {
+				return
+			}
+		}
+		return true
+	}()).To(gomega.BeTrue())
+	all = []TestEvent{}
+	for _, action := range []int8{Created, Deleted} {
+		for i := 0; i < N; i++ {
+			all = append(
+				all,
+				TestEvent{
+					action: action,
+					model:  &TestObject{ID: i},
+				})
+		}
+	}
+	g.Expect(func() (eq bool) {
+		h := handlerC
+		if len(all) != len(h.all) {
+			return
+		}
+		for i := 0; i < len(all); i++ {
+			if all[i].action != h.all[i].action ||
+				all[i].model.ID != h.all[i].model.ID {
+				return
+			}
+		}
+		return true
+	}()).To(gomega.BeTrue())
 }
 
 func TestMutatingWatch(t *testing.T) {
@@ -477,7 +555,6 @@ func TestMutatingWatch(t *testing.T) {
 		&TestObject{})
 	err := DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
-	DB.Journal().Enable()
 	// Handler A
 	handlerA := &MutatingHandler{
 		name: "A",

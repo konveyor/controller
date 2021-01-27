@@ -91,3 +91,18 @@ type Base struct {
 func (m *Base) Pk() string {
 	return m.PK
 }
+
+//
+// Create new the model.
+func Clone(model Model) Model {
+	mt := reflect.TypeOf(model)
+	mv := reflect.ValueOf(model)
+	switch mt.Kind() {
+	case reflect.Ptr:
+		mt = mt.Elem()
+		mv = mv.Elem()
+	}
+	new := reflect.New(mt).Elem()
+	new.Set(mv)
+	return new.Addr().Interface().(Model)
+}

@@ -37,8 +37,6 @@ type DB interface {
 	Watch(Model, EventHandler) (*Watch, error)
 	// End a watch.
 	EndWatch(watch *Watch)
-	// The journal
-	Journal() *Journal
 }
 
 //
@@ -99,7 +97,6 @@ func (r *Client) Close(purge bool) error {
 	if r.db == nil {
 		return nil
 	}
-	r.journal.Disable()
 	err := r.db.Close()
 	if err != nil {
 		return liberr.Wrap(err)
@@ -180,7 +177,7 @@ func (r *Client) Update(model Model) error {
 	r.dbMutex.Lock()
 	defer r.dbMutex.Unlock()
 	table := Table{r.db}
-	current := r.journal.copy(model)
+	current := Clone(model)
 	err := table.Get(current)
 	if err != nil {
 		return liberr.Wrap(err)
@@ -237,16 +234,7 @@ func (r *Client) Watch(model Model, handler EventHandler) (*Watch, error) {
 		return nil, liberr.Wrap(err)
 	}
 	list := listPtr.Elem()
-	for i := 0; i < list.Len(); i++ {
-		m := list.Index(i).Addr().Interface()
-		watch.notify(
-			&Event{
-				Model:  m.(Model),
-				Action: Created,
-			})
-	}
-
-	watch.Start()
+	watch.Start(&list)
 
 	return watch, nil
 }
@@ -255,12 +243,6 @@ func (r *Client) Watch(model Model, handler EventHandler) (*Watch, error) {
 // End watch.
 func (r *Client) EndWatch(watch *Watch) {
 	r.journal.End(watch)
-}
-
-//
-// The associated journal.
-func (r *Client) Journal() *Journal {
-	return &r.journal
 }
 
 //
@@ -317,7 +299,7 @@ func (r *Tx) Insert(model Model) error {
 // Update the model.
 func (r *Tx) Update(model Model) error {
 	table := Table{r.real}
-	current := r.journal.copy(model)
+	current := Clone(model)
 	err := table.Get(current)
 	if err != nil {
 		return liberr.Wrap(err)
