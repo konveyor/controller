@@ -377,6 +377,43 @@ func TestList(t *testing.T) {
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(N / 2))
 	g.Expect(list[0].RowID).To(gomega.Equal(int64(N/2) + 1))
+	// List (Eq) Field values.
+	list = []TestObject{}
+	err = DB.List(
+		&list,
+		ListOptions{
+			Predicate: Eq("RowID", Field{Name: "int8"}),
+		})
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(1))
+	g.Expect(list[0].RowID).To(gomega.Equal(int64(8)))
+	// List (nEq) Field values.
+	list = []TestObject{}
+	err = DB.List(
+		&list,
+		ListOptions{
+			Predicate: Neq("RowID", Field{Name: "int8"}),
+		})
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(N - 1))
+	// List (Lt) Field values.
+	list = []TestObject{}
+	err = DB.List(
+		&list,
+		ListOptions{
+			Predicate: Lt("int8", Field{Name: "int16"}),
+		})
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(N))
+	// List (Gt) Field values.
+	list = []TestObject{}
+	err = DB.List(
+		&list,
+		ListOptions{
+			Predicate: Gt("RowID", Field{Name: "int8"}),
+		})
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(2))
 	// By label.
 	list = []TestObject{}
 	err = DB.List(
