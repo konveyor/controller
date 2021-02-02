@@ -29,6 +29,8 @@ type Event struct {
 //
 // Event handler.
 type EventHandler interface {
+	// Watch has started.
+	Started()
 	// A model has been created.
 	Created(Event)
 	// A model has been updated.
@@ -84,6 +86,7 @@ func (w *Watch) Start(list *reflect.Value) {
 	if w.started {
 		return
 	}
+	w.Handler.Started()
 	run := func() {
 		for i := 0; i < list.Len(); i++ {
 			m := list.Index(i).Addr().Interface()
@@ -248,3 +251,31 @@ func (r *Journal) hasWatch(model Model) bool {
 
 	return false
 }
+
+//
+// Stub event handler.
+type StubEventHandler struct{}
+
+//
+// Watch has started.
+func (r *StubEventHandler) Started() {}
+
+//
+// A model has been created.
+func (r *StubEventHandler) Created(Event) {}
+
+//
+// A model has been updated.
+func (r *StubEventHandler) Updated(Event) {}
+
+//
+// A model has been deleted.
+func (r *StubEventHandler) Deleted(Event) {}
+
+//
+// An error has occurred delivering an event.
+func (r *StubEventHandler) Error(error) {}
+
+//
+// An event watch has ended.
+func (r *StubEventHandler) End() {}

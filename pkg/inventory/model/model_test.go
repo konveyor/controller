@@ -64,12 +64,17 @@ type TestEvent struct {
 
 type TestHandler struct {
 	name    string
+	started bool
 	all     []TestEvent
 	created []int
 	updated []int
 	deleted []int
 	err     []error
 	done    bool
+}
+
+func (w *TestHandler) Started() {
+	w.started = true
 }
 
 func (w *TestHandler) Created(e Event) {
@@ -102,8 +107,13 @@ func (w *TestHandler) End() {
 type MutatingHandler struct {
 	DB
 	name    string
+	started bool
 	created []int
 	updated []int
+}
+
+func (w *MutatingHandler) Started() {
+	w.started = true
 }
 
 func (w *MutatingHandler) Created(e Event) {
@@ -513,6 +523,9 @@ func TestWatch(t *testing.T) {
 			break
 		}
 	}
+	g.Expect(handlerA.started).To(gomega.BeTrue())
+	g.Expect(handlerB.started).To(gomega.BeTrue())
+	g.Expect(handlerC.started).To(gomega.BeTrue())
 	//
 	// The scenario is:
 	// 1. handler A created
