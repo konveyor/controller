@@ -124,7 +124,13 @@ type SimplePredicate struct {
 //
 // Find referenced field.
 func (p *SimplePredicate) match(fields []*Field) (*Field, bool) {
-	name := strings.ToLower(p.Field)
+	return p.field(p.Field, fields)
+}
+
+//
+// Find field.
+func (p *SimplePredicate) field(name string, fields []*Field) (*Field, bool) {
+	name = strings.ToLower(name)
 	for _, f := range fields {
 		if name == strings.ToLower(f.Name) {
 			return f, true
@@ -132,6 +138,42 @@ func (p *SimplePredicate) match(fields []*Field) (*Field, bool) {
 	}
 
 	return nil, false
+}
+
+//
+// Build.
+func (p *SimplePredicate) build(operator string, options *ListOptions) error {
+	f, found := p.match(options.fields)
+	if !found {
+		return liberr.Wrap(PredicateRefErr)
+	}
+	switch p.Value.(type) {
+	case Field:
+		value := p.Value.(Field)
+		fv, found := p.field(value.Name, options.fields)
+		if !found {
+			return liberr.Wrap(PredicateRefErr)
+		}
+		p.expr = strings.Join(
+			[]string{
+				f.Name,
+				operator,
+				fv.Name,
+			}, " ")
+	default:
+		v, err := f.AsValue(p.Value)
+		if err != nil {
+			return liberr.Wrap(err)
+		}
+		p.expr = strings.Join(
+			[]string{
+				f.Name,
+				operator,
+				options.Param(f.Name, v)},
+			" ")
+	}
+
+	return nil
 }
 
 //
@@ -143,16 +185,7 @@ type EqPredicate struct {
 //
 // Build.
 func (p *EqPredicate) Build(options *ListOptions) error {
-	f, found := p.match(options.fields)
-	if !found {
-		return liberr.Wrap(PredicateRefErr)
-	}
-	v, err := f.AsValue(p.Value)
-	if err != nil {
-		return liberr.Wrap(err)
-	}
-	p.expr = f.Name + " = " + options.Param(f.Name, v)
-	return nil
+	return p.build("=", options)
 }
 
 //
@@ -170,16 +203,7 @@ type NeqPredicate struct {
 //
 // Build.
 func (p *NeqPredicate) Build(options *ListOptions) error {
-	f, found := p.match(options.fields)
-	if !found {
-		return liberr.Wrap(PredicateRefErr)
-	}
-	v, err := f.AsValue(p.Value)
-	if err != nil {
-		return liberr.Wrap(err)
-	}
-	p.expr = f.Name + " != " + options.Param(f.Name, v)
-	return nil
+	return p.build("!=", options)
 }
 
 //
@@ -210,12 +234,7 @@ func (p *GtPredicate) Build(options *ListOptions) error {
 		reflect.Int16,
 		reflect.Int32,
 		reflect.Int64:
-		v, err := f.AsValue(p.Value)
-		if err != nil {
-			return liberr.Wrap(err)
-		}
-		p.expr = f.Name + " > " + options.Param(f.Name, v)
-		return nil
+		return p.build(">", options)
 	default:
 		return FieldTypeErr
 	}
@@ -249,12 +268,7 @@ func (p *LtPredicate) Build(options *ListOptions) error {
 		reflect.Int16,
 		reflect.Int32,
 		reflect.Int64:
-		v, err := f.AsValue(p.Value)
-		if err != nil {
-			return liberr.Wrap(err)
-		}
-		p.expr = f.Name + " < " + options.Param(f.Name, v)
-		return nil
+		return p.build("<", options)
 	default:
 		return FieldTypeErr
 	}
