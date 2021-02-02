@@ -105,7 +105,7 @@ func (r *Condition) Equal(other Condition) bool {
 //     "Resource Ready.")
 //
 type Conditions struct {
-	List    []Condition `json:"conditions"`
+	List    []Condition `json:"conditions,omitempty"`
 	staging bool        `json:"-"`
 }
 
