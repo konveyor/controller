@@ -129,6 +129,11 @@ func (r *Reconciler) UpdateThreshold(m libmodel.Model) {
 	}
 }
 
+// Test connection with credentials.
+func (r *Reconciler) Test() error {
+	return r.buildClient()
+}
+
 //
 // Start the reconciler.
 func (r *Reconciler) Start() error {
