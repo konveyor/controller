@@ -136,7 +136,7 @@ type Reconciler interface {
 	HasConsistency() bool
 	// Get the associated DB.
 	DB() model.DB
-	// Test.
+	// Test connection with credentials.
 	Test() error
 	// Reset
 	Reset()
