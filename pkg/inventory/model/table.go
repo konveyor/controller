@@ -181,7 +181,7 @@ func (t Table) Validate(fields []*Field) error {
 	for _, f := range fields {
 		err := f.Validate()
 		if err != nil {
-			return liberr.Wrap(err)
+			return err
 		}
 	}
 	pk := t.PkField(fields)
@@ -199,11 +199,11 @@ func (t Table) DDL(model interface{}) ([]string, error) {
 	tpl := template.New("")
 	fields, err := t.Fields(model)
 	if err != nil {
-		return nil, liberr.Wrap(err)
+		return nil, err
 	}
 	err = t.Validate(fields)
 	if err != nil {
-		return nil, liberr.Wrap(err)
+		return nil, err
 	}
 	// Table
 	tpl, err = tpl.Parse(TableDDL)
@@ -252,12 +252,12 @@ func (t Table) DDL(model interface{}) ([]string, error) {
 func (t Table) Insert(model interface{}) error {
 	fields, err := t.Fields(model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	t.SetPk(fields)
 	stmt, err := t.insertSQL(t.Name(model), fields)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	params := t.Params(fields)
 	r, err := t.DB.Exec(stmt, params...)
@@ -283,12 +283,12 @@ func (t Table) Insert(model interface{}) error {
 func (t Table) Update(model interface{}) error {
 	fields, err := t.Fields(model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	t.SetPk(fields)
 	stmt, err := t.updateSQL(t.Name(model), fields)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	params := t.Params(fields)
 	r, err := t.DB.Exec(stmt, params...)
@@ -312,12 +312,12 @@ func (t Table) Update(model interface{}) error {
 func (t Table) Delete(model interface{}) error {
 	fields, err := t.Fields(model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	t.SetPk(fields)
 	stmt, err := t.deleteSQL(t.Name(model), fields)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	params := t.Params(fields)
 	r, err := t.DB.Exec(stmt, params...)
@@ -342,12 +342,12 @@ func (t Table) Delete(model interface{}) error {
 func (t Table) Get(model interface{}) error {
 	fields, err := t.Fields(model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	t.SetPk(fields)
 	stmt, err := t.getSQL(t.Name(model), fields)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	params := t.Params(fields)
 	row := t.DB.QueryRow(stmt, params...)
@@ -378,11 +378,11 @@ func (t Table) List(list interface{}, options ListOptions) error {
 	}
 	fields, err := t.Fields(model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	stmt, err := t.listSQL(t.Name(model), fields, &options)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	params := options.Params()
 	cursor, err := t.DB.Query(stmt, params...)
@@ -417,19 +417,16 @@ func (t Table) List(list interface{}, options ListOptions) error {
 func (t Table) Count(model interface{}, predicate Predicate) (int64, error) {
 	fields, err := t.Fields(model)
 	if err != nil {
-		return 0, liberr.Wrap(err)
+		return 0, err
 	}
 	options := ListOptions{Predicate: predicate}
 	stmt, err := t.countSQL(t.Name(model), fields, &options)
 	if err != nil {
-		return 0, liberr.Wrap(err)
+		return 0, err
 	}
 	count := int64(0)
 	params := options.Params()
 	row := t.DB.QueryRow(stmt, params...)
-	if err != nil {
-		return 0, liberr.Wrap(err)
-	}
 	err = row.Scan(&count)
 	if err != nil {
 		return 0, liberr.Wrap(err)
@@ -740,7 +737,7 @@ func (t Table) listSQL(table string, fields []*Field, options *ListOptions) (str
 	}
 	err = options.Build(table, fields)
 	if err != nil {
-		return "", liberr.Wrap(err)
+		return "", err
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
@@ -768,7 +765,7 @@ func (t Table) countSQL(table string, fields []*Field, options *ListOptions) (st
 	}
 	err = options.Build(table, fields)
 	if err != nil {
-		return "", liberr.Wrap(err)
+		return "", err
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
@@ -1313,7 +1310,7 @@ func (l *ListOptions) Build(table string, fields []*Field) error {
 	}
 	err := l.Predicate.Build(l)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 
 	return nil
