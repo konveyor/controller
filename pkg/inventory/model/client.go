@@ -140,7 +140,7 @@ func (r *Client) Begin() (*Tx, error) {
 	r.dbMutex.Lock()
 	real, err := r.db.Begin()
 	if err != nil {
-		return nil, err
+		return nil, liberr.Wrap(err)
 	}
 	tx := &Tx{
 		dbMutex: &r.dbMutex,
@@ -159,11 +159,11 @@ func (r *Client) Insert(model Model) error {
 	table := Table{r.db}
 	err := table.Insert(model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	err = r.labeler.Insert(table, model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	r.journal.Created(model)
 	r.journal.Commit()
@@ -180,15 +180,15 @@ func (r *Client) Update(model Model) error {
 	current := Clone(model)
 	err := table.Get(current)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	err = table.Update(model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	err = r.labeler.Replace(table, model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	r.journal.Updated(current, model)
 	r.journal.Commit()
@@ -204,11 +204,11 @@ func (r *Client) Delete(model Model) error {
 	table := Table{r.db}
 	err := table.Delete(model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	err = r.labeler.Delete(table, model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	r.journal.Deleted(model)
 	r.journal.Commit()
@@ -226,12 +226,12 @@ func (r *Client) Watch(model Model, handler EventHandler) (*Watch, error) {
 	}
 	watch, err := r.journal.Watch(model, handler)
 	if err != nil {
-		return nil, liberr.Wrap(err)
+		return nil, err
 	}
 	listPtr := reflect.New(reflect.SliceOf(mt))
 	err = Table{r.db}.List(listPtr.Interface(), ListOptions{})
 	if err != nil {
-		return nil, liberr.Wrap(err)
+		return nil, err
 	}
 	list := listPtr.Elem()
 	watch.Start(&list)
@@ -284,11 +284,11 @@ func (r *Tx) Insert(model Model) error {
 	table := Table{r.real}
 	err := table.Insert(model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	err = r.labeler.Insert(table, model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	r.journal.Created(model)
 
@@ -302,15 +302,15 @@ func (r *Tx) Update(model Model) error {
 	current := Clone(model)
 	err := table.Get(current)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	err = table.Update(model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	err = r.labeler.Replace(table, model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	r.journal.Updated(current, model)
 
@@ -323,11 +323,11 @@ func (r *Tx) Delete(model Model) error {
 	table := Table{r.real}
 	err := table.Delete(model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	err = r.labeler.Delete(table, model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	r.journal.Deleted(model)
 
@@ -397,7 +397,7 @@ func (r *Labeler) Insert(table Table, model Model) error {
 		}
 		err := table.Insert(label)
 		if err != nil {
-			return liberr.Wrap(err)
+			return err
 		}
 	}
 
@@ -416,12 +416,12 @@ func (r *Labeler) Delete(table Table, model Model) error {
 				Eq("Parent", model.Pk())),
 		})
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	for _, label := range list {
 		err := table.Delete(&label)
 		if err != nil {
-			return liberr.Wrap(err)
+			return err
 		}
 	}
 
@@ -433,11 +433,11 @@ func (r *Labeler) Delete(table Table, model Model) error {
 func (r *Labeler) Replace(table Table, model Model) error {
 	err := r.Delete(table, model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 	err = r.Insert(table, model)
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
 
 	return nil

@@ -163,7 +163,7 @@ func (p *SimplePredicate) build(operator string, options *ListOptions) error {
 	default:
 		v, err := f.AsValue(p.Value)
 		if err != nil {
-			return liberr.Wrap(err)
+			return err
 		}
 		p.expr = strings.Join(
 			[]string{
@@ -299,7 +299,7 @@ func (p *AndPredicate) Build(options *ListOptions) error {
 	for _, p := range p.Predicates {
 		err := p.Build(options)
 		if err != nil {
-			return liberr.Wrap(err)
+			return err
 		}
 	}
 
@@ -331,7 +331,7 @@ func (p *OrPredicate) Build(options *ListOptions) error {
 	for _, p := range p.Predicates {
 		err := p.Build(options)
 		if err != nil {
-			return liberr.Wrap(err)
+			return err
 		}
 	}
 

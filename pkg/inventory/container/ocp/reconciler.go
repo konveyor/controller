@@ -184,18 +184,15 @@ func (r *Reconciler) start(ctx context.Context) (err error) {
 	r.log.Info("Start")
 	err = r.buildManager()
 	if err != nil {
-		err = liberr.Wrap(err)
 		return
 	}
 	err = r.buildClient()
 	if err != nil {
-		err = liberr.Wrap(err)
 		return
 	}
 	go r.manager.Start(r.stopChannel)
 	err = r.reconcileCollections(ctx)
 	if err != nil {
-		err = liberr.Wrap(err)
 		return
 	}
 	go r.applyEvents()
@@ -372,7 +369,6 @@ type ModelEvent struct {
 func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 	tx, err := rl.db.Begin()
 	if err != nil {
-		err = liberr.Wrap(err)
 		return
 	}
 	defer func() {
@@ -390,7 +386,6 @@ func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 			rl.log.Info("Create", ref.ToKind(r.model), r.model.String())
 			err = tx.Insert(r.model)
 			if err != nil {
-				err = liberr.Wrap(err)
 				return
 			}
 		}
@@ -399,7 +394,6 @@ func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 			rl.log.Info("Update", ref.ToKind(r.model), r.model.String())
 			err = tx.Update(r.model)
 			if err != nil {
-				err = liberr.Wrap(err)
 				return
 			}
 		}
@@ -407,7 +401,6 @@ func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 		rl.log.Info("Delete", ref.ToKind(r.model), r.model.String())
 		err = tx.Delete(r.model)
 		if err != nil {
-			err = liberr.Wrap(err)
 			return
 		}
 	default:
@@ -415,7 +408,6 @@ func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 	}
 	err = tx.Commit()
 	if err != nil {
-		err = liberr.Wrap(err)
 		return
 	}
 
