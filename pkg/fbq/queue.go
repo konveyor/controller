@@ -18,8 +18,6 @@ const (
 
 //
 // New file-backed queue at the specified path.
-// The optional `dir` will default to `WorkingDir` when
-// not specified.
 func New(dir string) *Queue {
 	uid, _ := uuid.NewUUID()
 	name := uid.String() + Extension
