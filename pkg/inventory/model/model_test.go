@@ -65,6 +65,7 @@ type TestEvent struct {
 type TestHandler struct {
 	name    string
 	started bool
+	parity  bool
 	all     []TestEvent
 	created []int
 	updated []int
@@ -75,6 +76,10 @@ type TestHandler struct {
 
 func (w *TestHandler) Started() {
 	w.started = true
+}
+
+func (w *TestHandler) Parity() {
+	w.parity = true
 }
 
 func (w *TestHandler) Created(e Event) {
@@ -102,18 +107,24 @@ func (w *TestHandler) Error(err error) {
 }
 
 func (w *TestHandler) End() {
+	w.done = true
 }
 
 type MutatingHandler struct {
 	DB
 	name    string
 	started bool
+	parity  bool
 	created []int
 	updated []int
 }
 
 func (w *MutatingHandler) Started() {
 	w.started = true
+}
+
+func (w *MutatingHandler) Parity() {
+	w.parity = true
 }
 
 func (w *MutatingHandler) Created(e Event) {
@@ -526,6 +537,9 @@ func TestWatch(t *testing.T) {
 	g.Expect(handlerA.started).To(gomega.BeTrue())
 	g.Expect(handlerB.started).To(gomega.BeTrue())
 	g.Expect(handlerC.started).To(gomega.BeTrue())
+	g.Expect(handlerA.parity).To(gomega.BeTrue())
+	g.Expect(handlerB.parity).To(gomega.BeTrue())
+	g.Expect(handlerC.parity).To(gomega.BeTrue())
 	//
 	// The scenario is:
 	// 1. handler A created
@@ -595,6 +609,26 @@ func TestWatch(t *testing.T) {
 		}
 		return true
 	}()).To(gomega.BeTrue())
+
+	//
+	// Test watch end.
+	watchA.End()
+	watchB.End()
+	watchC.End()
+	ended := false
+	for i := 0; i < 10; i++ {
+		if watchA.started || watchB.started || watchC.started {
+			time.Sleep(50 * time.Millisecond)
+		} else {
+			ended = true
+			break
+		}
+	}
+	g.Expect(len(watchA.journal.watchList)).To(gomega.Equal(0))
+	g.Expect(ended).To(gomega.BeTrue())
+	g.Expect(handlerA.done).To(gomega.BeTrue())
+	g.Expect(handlerB.done).To(gomega.BeTrue())
+	g.Expect(handlerC.done).To(gomega.BeTrue())
 }
 
 func TestMutatingWatch(t *testing.T) {

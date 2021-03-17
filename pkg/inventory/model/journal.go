@@ -10,6 +10,7 @@ import (
 //
 // Event Actions.
 var (
+	Parity  int8 = 0x00
 	Created int8 = 0x01
 	Updated int8 = 0x02
 	Deleted int8 = 0x04
@@ -31,6 +32,10 @@ type Event struct {
 type EventHandler interface {
 	// Watch has started.
 	Started()
+	// Parity marker.
+	// The watch has delivered the initial set
+	// of `Created` events.
+	Parity()
 	// A model has been created.
 	Created(Event)
 	// A model has been updated.
@@ -52,8 +57,16 @@ type Watch struct {
 	Handler EventHandler
 	// Event queue.
 	queue chan *Event
+	// Journal.
+	journal *Journal
 	// Started
 	started bool
+}
+
+//
+// End the watch.
+func (w *Watch) End() {
+	w.journal.End(w)
 }
 
 //
@@ -82,7 +95,7 @@ func (w *Watch) notify(event *Event) {
 //
 // Run the watch.
 // Forward events to the `handler`.
-func (w *Watch) Start(list *reflect.Value) {
+func (w *Watch) start(list *reflect.Value) {
 	if w.started {
 		return
 	}
@@ -97,6 +110,7 @@ func (w *Watch) Start(list *reflect.Value) {
 				})
 		}
 		list = nil
+		w.Handler.Parity()
 		for event := range w.queue {
 			switch event.Action {
 			case Created:
@@ -109,6 +123,7 @@ func (w *Watch) Start(list *reflect.Value) {
 				w.Handler.Error(liberr.New("unknown action"))
 			}
 		}
+		w.started = false
 		w.Handler.End()
 	}
 
@@ -117,9 +132,11 @@ func (w *Watch) Start(list *reflect.Value) {
 }
 
 //
-// End the watch.
-func (w *Watch) End() {
-	close(w.queue)
+// Terminate.
+func (w *Watch) terminate() {
+	if w.started {
+		close(w.queue)
+	}
 }
 
 //
@@ -142,6 +159,7 @@ func (r *Journal) Watch(model Model, handler EventHandler) (*Watch, error) {
 	watch := &Watch{
 		Handler: handler,
 		Model:   model,
+		journal: r,
 	}
 	r.watchList = append(r.watchList, watch)
 	watch.queue = make(chan *Event, 10000)
@@ -159,7 +177,7 @@ func (r *Journal) End(watch *Watch) {
 			kept = append(kept, w)
 			continue
 		}
-		w.End()
+		w.terminate()
 	}
 
 	r.watchList = kept
@@ -259,6 +277,10 @@ type StubEventHandler struct{}
 //
 // Watch has started.
 func (r *StubEventHandler) Started() {}
+
+//
+// Watch has parity.
+func (r *StubEventHandler) Parity() {}
 
 //
 // A model has been created.

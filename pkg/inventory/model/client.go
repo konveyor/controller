@@ -234,7 +234,7 @@ func (r *Client) Watch(model Model, handler EventHandler) (*Watch, error) {
 		return nil, err
 	}
 	list := listPtr.Elem()
-	watch.Start(&list)
+	watch.start(&list)
 
 	return watch, nil
 }
