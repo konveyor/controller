@@ -96,4 +96,25 @@ func TestLogger(t *testing.T) {
 	g.Expect(len(f.entry[4].kvpair)).To(gomega.Equal(4))
 	g.Expect(f.entry[4].kvpair[0]).To(gomega.Equal(Error))
 	g.Expect(f.entry[4].kvpair[2]).To(gomega.Equal(Stack))
+	// Trace (wrapped) with context.
+	log.Trace(
+		liberr.Wrap(
+			errors.New("D wrapped"),
+			"Failed to create user.",
+			"name", "larry",
+			"age", 10),
+		"a", "A",
+		"b", "B")
+	g.Expect(len(f.entry)).To(gomega.Equal(6))
+	g.Expect(len(f.entry[5].kvpair)).To(gomega.Equal(12))
+	g.Expect(f.entry[5].kvpair[0]).To(gomega.Equal("name"))
+	g.Expect(f.entry[5].kvpair[1]).To(gomega.Equal("larry"))
+	g.Expect(f.entry[5].kvpair[2]).To(gomega.Equal("age"))
+	g.Expect(f.entry[5].kvpair[3]).To(gomega.Equal(10))
+	g.Expect(f.entry[5].kvpair[4]).To(gomega.Equal("a"))
+	g.Expect(f.entry[5].kvpair[5]).To(gomega.Equal("A"))
+	g.Expect(f.entry[5].kvpair[6]).To(gomega.Equal("b"))
+	g.Expect(f.entry[5].kvpair[7]).To(gomega.Equal("B"))
+	g.Expect(f.entry[5].kvpair[8]).To(gomega.Equal(Error))
+	g.Expect(f.entry[5].kvpair[10]).To(gomega.Equal(Stack))
 }

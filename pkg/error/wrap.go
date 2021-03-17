@@ -3,6 +3,7 @@ package error
 import (
 	"errors"
 	"fmt"
+	"math"
 	"runtime"
 	"strings"
 )
@@ -16,11 +17,12 @@ func New(m string) error {
 //
 // Wrap an error.
 // Returns `err` when err is `nil` or *Error.
-func Wrap(err error) error {
+func Wrap(err error, kvpair ...interface{}) error {
 	if err == nil {
 		return err
 	}
 	if le, cast := err.(*Error); cast {
+		le.append(kvpair)
 		return le
 	}
 	bfr := make([]uintptr, 50)
@@ -39,10 +41,14 @@ func Wrap(err error) error {
 			break
 		}
 	}
-	return &Error{
+	newError := &Error{
 		stack:   stack,
 		wrapped: err,
 	}
+
+	newError.append(kvpair)
+
+	return newError
 }
 
 //
@@ -71,6 +77,10 @@ func Unwrap(err error) (out error) {
 type Error struct {
 	// Original error.
 	wrapped error
+	// Error description.
+	description string
+	// Context.
+	context []interface{}
 	// Stack.
 	stack []string
 }
@@ -78,7 +88,11 @@ type Error struct {
 //
 // Error description.
 func (e Error) Error() string {
-	return e.wrapped.Error()
+	if len(e.description) > 0 {
+		return e.causedBy(e.description, e.wrapped.Error())
+	} else {
+		return e.wrapped.Error()
+	}
 }
 
 //
@@ -94,7 +108,44 @@ func (e Error) Stack() string {
 }
 
 //
+// Get `context` key/value pairs.
+func (e Error) Context() []interface{} {
+	return e.context
+}
+
+//
 // Unwrap the error.
 func (e Error) Unwrap() error {
 	return Unwrap(e.wrapped)
+}
+
+//
+// Append context.
+// And odd number of context is interpreted as:
+// a description followed by an even number of key value pairs.
+func (e *Error) append(kvpair []interface{}) {
+	if len(kvpair) == 0 {
+		return
+	}
+	fLen := float64(len(kvpair))
+	odd := math.Mod(fLen, 2) != 0
+	if description, cast := kvpair[0].(string); odd && cast {
+		kvpair = kvpair[1:]
+		if len(e.description) > 0 {
+			e.description = e.causedBy(description, e.description)
+		} else {
+			e.description = description
+		}
+	}
+
+	e.context = append(e.context, kvpair...)
+}
+
+//
+// Build caused-by.
+func (e *Error) causedBy(error, caused string) string {
+	return fmt.Sprintf(
+		"%s caused by: '%s'",
+		error,
+		caused)
 }
