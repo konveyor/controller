@@ -2,8 +2,8 @@ package model
 
 import (
 	liberr "github.com/konveyor/controller/pkg/error"
+	"github.com/konveyor/controller/pkg/fbq"
 	"github.com/konveyor/controller/pkg/ref"
-	"reflect"
 	"sync"
 )
 
@@ -51,7 +51,7 @@ type Watch struct {
 	// Event handler.
 	Handler EventHandler
 	// Event queue.
-	queue chan *Event
+	queue chan fbq.Iterator
 	// Started
 	started bool
 }
@@ -64,16 +64,14 @@ func (w *Watch) Match(model Model) bool {
 
 //
 // Queue event.
-func (w *Watch) notify(event *Event) {
-	if !w.Match(event.Model) {
-		return
-	}
+func (w *Watch) notify(itr fbq.Iterator) {
 	defer func() {
 		recover()
 	}()
 	select {
-	case w.queue <- event:
+	case w.queue <- itr:
 	default:
+		itr.Close()
 		err := liberr.New("full queue, event discarded")
 		w.Handler.Error(err)
 	}
@@ -82,32 +80,38 @@ func (w *Watch) notify(event *Event) {
 //
 // Run the watch.
 // Forward events to the `handler`.
-func (w *Watch) Start(list *reflect.Value) {
+func (w *Watch) Start() {
 	if w.started {
 		return
 	}
 	w.Handler.Started()
 	run := func() {
-		for i := 0; i < list.Len(); i++ {
-			m := list.Index(i).Addr().Interface()
-			w.Handler.Created(
-				Event{
-					Model:  m.(Model),
-					Action: Created,
-				})
-		}
-		list = nil
-		for event := range w.queue {
-			switch event.Action {
-			case Created:
-				w.Handler.Created(*event)
-			case Updated:
-				w.Handler.Updated(*event)
-			case Deleted:
-				w.Handler.Deleted(*event)
-			default:
-				w.Handler.Error(liberr.New("unknown action"))
+		for itr := range w.queue {
+			for {
+				object, hasNext, err := itr.Next()
+				if !hasNext {
+					break
+				}
+				if err != nil {
+					w.Handler.Error(err)
+					break
+				}
+				event := object.(*Event)
+				if !w.Match(event.Model) {
+					continue
+				}
+				switch event.Action {
+				case Created:
+					w.Handler.Created(*event)
+				case Updated:
+					w.Handler.Updated(*event)
+				case Deleted:
+					w.Handler.Deleted(*event)
+				default:
+					w.Handler.Error(liberr.New("unknown action"))
+				}
 			}
+			itr.Close()
 		}
 		w.Handler.End()
 	}
@@ -126,10 +130,12 @@ func (w *Watch) End() {
 // Event manager.
 type Journal struct {
 	mutex sync.RWMutex
+	// Path.
+	path string
 	// List of registered watches.
 	watchList []*Watch
-	// Queue of staged events.
-	staged []*Event
+	// Event writer.
+	writer *fbq.Queue
 }
 
 //
@@ -144,7 +150,7 @@ func (r *Journal) Watch(model Model, handler EventHandler) (*Watch, error) {
 		Model:   model,
 	}
 	r.watchList = append(r.watchList, watch)
-	watch.queue = make(chan *Event, 10000)
+	watch.queue = make(chan fbq.Iterator, 100)
 	return watch, nil
 }
 
@@ -168,53 +174,65 @@ func (r *Journal) End(watch *Watch) {
 //
 // A model has been created.
 // Queue an event.
-func (r *Journal) Created(model Model) {
+func (r *Journal) Created(model Model) (err error) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	if !r.hasWatch(model) {
 		return
 	}
-	r.staged = append(
-		r.staged,
-		&Event{
+	if r.writer == nil {
+		r.writer = fbq.New(r.path)
+	}
+	err = r.writer.Put(
+		Event{
 			Model:  Clone(model),
 			Action: Created,
 		})
+
+	return
 }
 
 //
 // A model has been updated.
 // Queue an event.
-func (r *Journal) Updated(model Model, updated Model) {
+func (r *Journal) Updated(model Model, updated Model) (err error) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	if !r.hasWatch(model) {
 		return
 	}
-	r.staged = append(
-		r.staged,
-		&Event{
+	if r.writer == nil {
+		r.writer = fbq.New(r.path)
+	}
+	err = r.writer.Put(
+		Event{
 			Model:   Clone(model),
 			Updated: Clone(updated),
 			Action:  Updated,
 		})
+
+	return
 }
 
 //
 // A model has been deleted.
 // Queue an event.
-func (r *Journal) Deleted(model Model) {
+func (r *Journal) Deleted(model Model) (err error) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	if !r.hasWatch(model) {
 		return
 	}
-	r.staged = append(
-		r.staged,
-		&Event{
+	if r.writer == nil {
+		r.writer = fbq.New(r.path)
+	}
+	err = r.writer.Put(
+		Event{
 			Model:  Clone(model),
 			Action: Deleted,
 		})
+
+	return
 }
 
 //
@@ -222,13 +240,16 @@ func (r *Journal) Deleted(model Model) {
 func (r *Journal) Commit() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	for _, event := range r.staged {
-		for _, w := range r.watchList {
-			w.notify(event)
-		}
+	if r.writer == nil {
+		return
+	}
+	for _, w := range r.watchList {
+		itr := r.writer.Iterator()
+		w.notify(itr)
 	}
 
-	r.staged = []*Event{}
+	r.writer.Close()
+	r.writer = nil
 }
 
 //
@@ -236,7 +257,8 @@ func (r *Journal) Commit() {
 func (r *Journal) Unstage() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	r.staged = []*Event{}
+	r.writer.Close()
+	r.writer = nil
 }
 
 //

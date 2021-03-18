@@ -33,7 +33,7 @@ func TestQueue(t *testing.T) {
 	}
 
 	q := New("/tmp")
-	defer q.Close(true)
+	defer q.Close()
 
 	for i := 0; i < len(input); i++ {
 		err := q.Put(input[i])

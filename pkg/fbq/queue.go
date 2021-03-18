@@ -87,8 +87,8 @@ func (q *Queue) Iterator() (itr Iterator) {
 
 //
 // Close the queue.
-func (q *Queue) Close(delete bool) {
-	q.writer.Close(delete)
+func (q *Queue) Close() {
+	q.writer.Close()
 	if q.iterator != nil {
 		q.iterator.Close()
 	}
@@ -116,6 +116,7 @@ func (w *Writer) Put(object interface{}) (err error) {
 		}
 	}
 	file := w.file
+	kind := w.add(object)
 	// Encode object and add to catalog.
 	var bfr bytes.Buffer
 	encoder := gob.NewEncoder(&bfr)
@@ -124,7 +125,6 @@ func (w *Writer) Put(object interface{}) (err error) {
 		err = liberr.Wrap(err)
 		return
 	}
-	kind := w.add(object)
 	// Write object kind.
 	b := make([]byte, 2)
 	binary.LittleEndian.PutUint16(b, kind)
@@ -151,21 +151,22 @@ func (w *Writer) Put(object interface{}) (err error) {
 	if n != nWrite {
 		err = liberr.New("Write failed.")
 	}
-
-	_ = file.Sync()
+	err = file.Sync()
+	if err != nil {
+		err = liberr.Wrap(err)
+		return
+	}
 
 	return
 }
 
 //
 // Close the writer.
-func (w *Writer) Close(delete bool) {
+func (w *Writer) Close() {
 	if w.file != nil {
 		_ = w.file.Close()
+		_ = os.Remove(w.path)
 		w.file = nil
-		if delete {
-			_ = os.Remove(w.path)
-		}
 	}
 }
 
@@ -187,9 +188,36 @@ func (w *Writer) open() (err error) {
 //
 // Add object (proto) to the catalog.
 func (w *Writer) add(object interface{}) (kind uint16) {
-	t := reflect.TypeOf(object)
+	if object == nil {
+		return
+	}
+	ot := reflect.TypeOf(object)
+	ov := reflect.ValueOf(object)
+	switch ot.Kind() {
+	case reflect.Ptr:
+		ot = ot.Elem()
+		ov = ov.Elem()
+		func() {
+			defer func() {
+				recover()
+			}()
+			gob.Register(object)
+		}()
+	case reflect.Struct:
+		for i := 0; i < ot.NumField(); i++ {
+			fv := ov.Field(i)
+			w.add(fv.Interface())
+		}
+	case reflect.Slice:
+		for i := 0; i < ot.Len(); i++ {
+			item := ov.Index(i)
+			w.add(item.Interface())
+		}
+	default:
+		return
+	}
 	for i, f := range w.catalog {
-		if t == reflect.TypeOf(f) {
+		if ot == reflect.TypeOf(f) {
 			kind = uint16(i)
 			return
 		}

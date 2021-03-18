@@ -237,7 +237,7 @@ func TestTransactions(t *testing.T) {
 	defer tx.End()
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(tx.dbMutex).To(gomega.Equal(&DB.(*Client).dbMutex))
-	g.Expect(tx.journal).To(gomega.Equal(&DB.(*Client).journal))
+	g.Expect(tx.journal).To(gomega.Equal(DB.(*Client).journal))
 	object := &TestObject{
 		ID:   0,
 		Name: "Elmer",

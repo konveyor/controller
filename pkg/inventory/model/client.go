@@ -3,7 +3,9 @@ package model
 import (
 	"database/sql"
 	liberr "github.com/konveyor/controller/pkg/error"
+	"github.com/konveyor/controller/pkg/fbq"
 	"os"
+	pathlib "path"
 	"reflect"
 	"sync"
 )
@@ -53,7 +55,7 @@ type Client struct {
 	// Database connection.
 	db *sql.DB
 	// Journal
-	journal Journal
+	journal *Journal
 }
 
 //
@@ -144,7 +146,7 @@ func (r *Client) Begin() (*Tx, error) {
 	}
 	tx := &Tx{
 		dbMutex: &r.dbMutex,
-		journal: &r.journal,
+		journal: r.journal,
 		real:    real,
 	}
 
@@ -234,7 +236,21 @@ func (r *Client) Watch(model Model, handler EventHandler) (*Watch, error) {
 		return nil, err
 	}
 	list := listPtr.Elem()
-	watch.Start(&list)
+	q := fbq.New(pathlib.Dir(r.path))
+	defer q.Close()
+	for i := 0; i < list.Len(); i++ {
+		m := list.Index(i).Addr().Interface()
+		err = q.Put(
+			Event{
+				Model:  m.(Model),
+				Action: Created,
+			})
+		if err != nil {
+			return nil, err
+		}
+	}
+	watch.notify(q.Iterator())
+	watch.Start()
 
 	return watch, nil
 }

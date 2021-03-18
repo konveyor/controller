@@ -105,11 +105,17 @@
 //
 package model
 
+import pathlib "path"
+
 //
 // New database.
 func New(path string, models ...interface{}) DB {
+	jnl := &Journal{
+		path: pathlib.Dir(path),
+	}
 	return &Client{
-		path:   path,
-		models: models,
+		path:    path,
+		models:  models,
+		journal: jnl,
 	}
 }
