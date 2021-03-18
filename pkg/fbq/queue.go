@@ -35,6 +35,8 @@ func New(dir string) *Queue {
 type Iterator interface {
 	// Next object.
 	Next() (interface{}, bool, error)
+	// Next object.
+	NextWith(object interface{}) (bool, error)
 	// Get associated error.
 	Error() error
 	// Close the iterator.
@@ -66,6 +68,16 @@ func (q *Queue) Next() (object interface{}, hasNext bool, err error) {
 		q.iterator = q.Iterator()
 	}
 	object, hasNext, err = q.iterator.Next()
+	return
+}
+
+//
+// Dequeue the next object.
+func (q *Queue) NextWith(object interface{}) (hasNext bool, err error) {
+	if q.iterator == nil {
+		q.iterator = q.Iterator()
+	}
+	hasNext, err = q.iterator.NextWith(object)
 	return
 }
 
@@ -245,6 +257,77 @@ type Reader struct {
 // Error.
 func (r *Reader) Error() error {
 	return r.error
+}
+
+//
+// Dequeue the next object.
+func (r *Reader) NextWith(object interface{}) (hasNext bool, err error) {
+	defer func() {
+		err = r.error
+	}()
+	if r.error != nil {
+		return
+	}
+	// Lazy open.
+	if r.file == nil {
+		r.error = r.open()
+		if r.error != nil {
+			return
+		}
+	}
+	file := r.file
+	// Read object kind.
+	b := make([]byte, 2)
+	_, r.error = file.Read(b)
+	if r.error != nil {
+		if r.error != io.EOF {
+			r.error = liberr.Wrap(r.error)
+		} else {
+			r.error = nil
+		}
+		return
+	}
+	// Read object encoded length.
+	kind := binary.LittleEndian.Uint16(b)
+	b = make([]byte, 8)
+	_, r.error = file.Read(b)
+	if r.error != nil {
+		if r.error != io.EOF {
+			r.error = liberr.Wrap(r.error)
+		} else {
+			r.error = nil
+		}
+		return
+	}
+	// Read encoded object.
+	n := int64(binary.LittleEndian.Uint64(b))
+	b = make([]byte, n)
+	_, r.error = file.Read(b)
+	if r.error != nil {
+		if r.error != io.EOF {
+			r.error = liberr.Wrap(r.error)
+		} else {
+			r.error = nil
+		}
+		return
+	}
+	// Decode object.
+	bfr := bytes.NewBuffer(b)
+	decoder := gob.NewDecoder(bfr)
+	_, found := r.find(kind)
+	if !found {
+		r.error = liberr.New("unknown kind")
+		return
+	}
+	r.error = decoder.Decode(object)
+	if r.error != nil {
+		r.error = liberr.Wrap(r.error)
+		return
+	}
+
+	hasNext = true
+
+	return
 }
 
 //

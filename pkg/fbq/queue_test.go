@@ -66,4 +66,24 @@ func TestQueue(t *testing.T) {
 		g.Expect(err).To(gomega.BeNil())
 		g.Expect(hasNext).To(gomega.BeTrue())
 	}
+
+	itr = q.Iterator()
+	g.Expect(itr.Error()).To(gomega.BeNil())
+	defer itr.Close()
+	for {
+		person := &Person{}
+		hasNext, err := itr.NextWith(person)
+		if !hasNext {
+			break
+		}
+		user := &User{}
+		hasNext, err = itr.NextWith(user)
+		if !hasNext {
+			break
+		}
+		g.Expect(person).ToNot(gomega.BeNil())
+		g.Expect(user).ToNot(gomega.BeNil())
+		g.Expect(err).To(gomega.BeNil())
+		g.Expect(hasNext).To(gomega.BeTrue())
+	}
 }
