@@ -71,12 +71,19 @@ func (l Logger) Error(err error, message string, kvpair ...interface{}) {
 		if k8serr.IsConflict(err) {
 			return
 		}
+		if context := le.Context(); context != nil {
+			context = append(
+				context,
+				kvpair...)
+			kvpair = context
+		}
 		kvpair = append(
 			kvpair,
 			Error,
 			le.Error(),
 			Stack,
 			le.Stack())
+
 		l.Real.Info(message, kvpair...)
 		return
 	}
