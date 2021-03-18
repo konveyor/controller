@@ -132,8 +132,8 @@ type Reconciler interface {
 	// Expected to disconnect, destroy created resources
 	// and return quickly.
 	Shutdown()
-	// The reconciler has achieved consistency.
-	HasConsistency() bool
+	// The reconciler has achieved parity.
+	HasParity() bool
 	// Get the associated DB.
 	DB() model.DB
 	// Test connection with credentials.

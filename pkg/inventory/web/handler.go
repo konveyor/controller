@@ -72,18 +72,18 @@ func (h *Paged) setPage(ctx *gin.Context) int {
 }
 
 //
-// Consistent (not-partial) request handler.
-type Consistent struct {
+// Parity (not-partial) request handler.
+type Parity struct {
 }
 
 //
-// Ensure that the
-func (c *Consistent) EnsureConsistency(r container.Reconciler, w time.Duration) int {
+// Ensure reconciler has achieved parity.
+func (c *Parity) EnsureParity(r container.Reconciler, w time.Duration) int {
 	wait := time.Second * 30
 	poll := time.Microsecond * 100
 	for {
 		mark := time.Now()
-		if r.HasConsistency() {
+		if r.HasParity() {
 			return http.StatusOK
 		}
 		if wait > 0 {

@@ -58,8 +58,8 @@ type Reconciler struct {
 	// lower than the threshold is redundant to changes made
 	// during collection reconciliation.
 	versionThreshold uint64
-	// The reconciler has (initial) consistency.
-	consistent bool
+	// The reconciler has (initial) parity.
+	parity bool
 	// cancel function.
 	cancel func()
 }
@@ -109,13 +109,13 @@ func (r *Reconciler) Client() client.Client {
 //
 // Reset.
 func (r *Reconciler) Reset() {
-	r.consistent = false
+	r.parity = false
 }
 
 //
-// Reconciler has achieved initial consistency.
-func (r *Reconciler) HasConsistency() bool {
-	return r.consistent
+// Reconciler has achieved parity.
+func (r *Reconciler) HasParity() bool {
+	return r.parity
 }
 
 //
@@ -169,7 +169,7 @@ func (r *Reconciler) Start() error {
 // Start details.
 //   1. Build and start the manager.
 //   2. Reconcile all of the collections.
-//   3. Mark consistent.
+//   3. Mark parity.
 //   4. Start apply events (coroutine).
 func (r *Reconciler) start(ctx context.Context) (err error) {
 	r.versionThreshold = 0
@@ -214,8 +214,8 @@ func (r *Reconciler) reconcileCollections(ctx context.Context) (err error) {
 		}
 	}
 
-	r.log.Info("Initial consistency.", "duration", time.Since(mark))
-	r.consistent = true
+	r.log.Info("Initial parity.", "duration", time.Since(mark))
+	r.parity = true
 
 	return
 }
