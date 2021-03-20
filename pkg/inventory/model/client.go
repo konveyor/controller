@@ -229,7 +229,9 @@ func (r *Client) Watch(model Model, handler EventHandler) (*Watch, error) {
 		return nil, err
 	}
 	listPtr := reflect.New(reflect.SliceOf(mt))
-	err = Table{r.db}.List(listPtr.Interface(), ListOptions{})
+	err = Table{r.db}.List(
+		listPtr.Interface(),
+		ListOptions{Detail: 1})
 	if err != nil {
 		return nil, err
 	}
