@@ -9,13 +9,6 @@ import (
 	"time"
 )
 
-// Root - all routes.
-const (
-	NsParam      = "ns1"
-	NsCollection = "namespaces"
-	Root         = "/" + NsCollection + "/:" + NsParam
-)
-
 //
 // Web server
 type WebServer struct {

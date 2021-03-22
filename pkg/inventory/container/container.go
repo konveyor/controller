@@ -111,9 +111,8 @@ func (c *Container) Delete(owner meta.Object) (p Reconciler, found bool) {
 // Build a reconciler key for an object.
 func (*Container) key(owner meta.Object) Key {
 	return Key{
-		Kind:      ref.ToKind(owner),
-		Namespace: owner.GetNamespace(),
-		Name:      owner.GetName(),
+		Kind: ref.ToKind(owner),
+		UID:  owner.GetUID(),
 	}
 }
 
