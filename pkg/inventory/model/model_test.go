@@ -488,6 +488,7 @@ func TestWatch(t *testing.T) {
 		object := &TestObject{
 			ID:   i,
 			Name: "Elmer",
+			D4:   "d4",
 		}
 		err = DB.Insert(object)
 		g.Expect(err).To(gomega.BeNil())
