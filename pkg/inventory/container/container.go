@@ -82,9 +82,6 @@ func (c *Container) Replace(reconciler Reconciler) (p Reconciler, found bool, er
 		c.content[key] = reconciler
 	}
 	replace()
-	if err != nil {
-		return
-	}
 	err = reconciler.Start()
 	if err != nil {
 		err = liberr.Wrap(err)

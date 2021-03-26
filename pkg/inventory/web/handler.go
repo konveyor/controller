@@ -181,7 +181,7 @@ func (r *WatchWriter) Started() {
 //
 // Watch has parity.
 func (r *WatchWriter) Parity() {
-	r.send(model.Event{})
+	r.send(model.Event{Action: model.Parity})
 }
 
 //
@@ -205,11 +205,13 @@ func (r *WatchWriter) Deleted(event model.Event) {
 //
 // An error has occurred delivering an event.
 func (r *WatchWriter) Error(err error) {
+	r.send(model.Event{Action: model.Error})
 }
 
 //
 // An event watch has ended.
 func (r *WatchWriter) End() {
+	r.send(model.Event{Action: model.End})
 }
 
 //

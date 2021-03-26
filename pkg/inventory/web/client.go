@@ -35,10 +35,45 @@ type EventHandler interface {
 	// Resource deleted.
 	Deleted(r Event)
 	// An error has occurred.
-	Error(error)
+	// The handler may call the Repair() on
+	// the watch to repair the watch as desired.
+	Error(*Watch, error)
 	// The watch has ended.
 	End()
 }
+
+//
+// Stock event handler.
+// Provides default event methods.
+type StockEventHandler struct{}
+
+//
+// Watch has started.
+func (r *StockEventHandler) Started() {}
+
+//
+// Watch has parity.
+func (r *StockEventHandler) Parity() {}
+
+//
+// A model has been created.
+func (r *StockEventHandler) Created(Event) {}
+
+//
+// A model has been updated.
+func (r *StockEventHandler) Updated(Event) {}
+
+//
+// A model has been deleted.
+func (r *StockEventHandler) Deleted(Event) {}
+
+//
+// An error has occurred reading events.
+func (r *StockEventHandler) Error(*Watch, error) {}
+
+//
+// An event watch has ended.
+func (r *StockEventHandler) End() {}
 
 //
 // REST client.
@@ -218,6 +253,19 @@ type WatchReader struct {
 }
 
 //
+// Terminate.
+func (r *WatchReader) Terminate() {
+	r.done = true
+	_ = r.webSocket.Close()
+}
+
+//
+// Repair.
+func (r *WatchReader) Repair() (status int, err error) {
+	return r.repair(r)
+}
+
+//
 // Dispatch events.
 func (r *WatchReader) start() {
 	if r.started {
@@ -228,6 +276,9 @@ func (r *WatchReader) start() {
 	go func() {
 		defer func() {
 			_ = r.webSocket.Close()
+			r.started = false
+			r.done = true
+			r.handler.End()
 		}()
 		r.handler.Started()
 		for {
@@ -240,20 +291,16 @@ func (r *WatchReader) start() {
 				if r.done {
 					break
 				}
-				r.handler.Error(err)
-				for {
-					time.Sleep(time.Second * 10)
-					status, err := r.repair(r)
-					if err != nil || status != http.StatusOK {
-						r.handler.Error(err)
-					} else {
-						break
-					}
-				}
+				time.Sleep(time.Second * 3)
+				r.handler.Error(&Watch{reader: r}, err)
 			}
 			switch event.Action {
 			case libmodel.Parity:
 				r.handler.Parity()
+			case libmodel.Error:
+				r.handler.Error(&Watch{reader: r}, nil)
+			case libmodel.End:
+				return
 			case libmodel.Created:
 				r.handler.Created(event)
 			case libmodel.Updated:
@@ -262,8 +309,6 @@ func (r *WatchReader) start() {
 				r.handler.Deleted(event)
 			}
 		}
-		r.started = false
-		r.handler.End()
 	}()
 }
 
@@ -277,16 +322,9 @@ func (r *WatchReader) clone(in interface{}) (out interface{}) {
 		mt = mt.Elem()
 		mv = mv.Elem()
 	}
-	new := reflect.New(mt).Elem()
-	new.Set(mv)
-	return new.Addr().Interface()
-}
-
-//
-// Terminate.
-func (r *WatchReader) terminate() {
-	r.done = true
-	_ = r.webSocket.Close()
+	object := reflect.New(mt).Elem()
+	object.Set(mv)
+	return object.Addr().Interface()
 }
 
 //
@@ -297,6 +335,26 @@ type Watch struct {
 
 //
 // End the watch.
+func (r *Watch) Repair() (err error) {
+	status, err := r.reader.Repair()
+	if err != nil {
+		return
+	}
+	if status != http.StatusOK {
+		err = liberr.New(http.StatusText(status))
+	}
+
+	return
+}
+
+//
+// End the watch.
 func (r *Watch) End() {
-	r.reader.terminate()
+	r.reader.Terminate()
+}
+
+//
+// The watch has not ended.
+func (r *Watch) Alive() bool {
+	return !r.reader.done
 }

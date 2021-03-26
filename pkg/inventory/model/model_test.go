@@ -482,13 +482,13 @@ func TestWatch(t *testing.T) {
 	watchA, err := DB.Watch(&TestObject{}, handlerA)
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(watchA).ToNot(gomega.BeNil())
+	g.Expect(watchA.Alive()).To(gomega.BeTrue())
 	N := 10
 	// Insert
 	for i := 0; i < N; i++ {
 		object := &TestObject{
 			ID:   i,
 			Name: "Elmer",
-			D4:   "d4",
 		}
 		err = DB.Insert(object)
 		g.Expect(err).To(gomega.BeNil())
@@ -630,6 +630,37 @@ func TestWatch(t *testing.T) {
 	g.Expect(handlerA.done).To(gomega.BeTrue())
 	g.Expect(handlerB.done).To(gomega.BeTrue())
 	g.Expect(handlerC.done).To(gomega.BeTrue())
+}
+
+func TestCloseDB(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	DB := New(
+		"/tmp/test.db",
+		&Label{},
+		&TestObject{})
+	err := DB.Open(true)
+	g.Expect(err).To(gomega.BeNil())
+	handler := &TestHandler{name: "A"}
+	watch, err := DB.Watch(&TestObject{}, handler)
+	for i := 0; i < 10; i++ {
+		if !watch.started {
+			time.Sleep(50 * time.Millisecond)
+		} else {
+			break
+		}
+	}
+	g.Expect(handler.started).To(gomega.BeTrue())
+	g.Expect(handler.done).To(gomega.BeFalse())
+	_ = DB.Close(true)
+	for i := 0; i < 100; i++ {
+		if !watch.done {
+			time.Sleep(50 * time.Millisecond)
+		} else {
+			break
+		}
+	}
+
+	g.Expect(handler.done).To(gomega.BeTrue())
 }
 
 func TestMutatingWatch(t *testing.T) {
