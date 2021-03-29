@@ -11,9 +11,11 @@ import (
 // Event Actions.
 var (
 	Parity  int8 = 0x00
-	Created int8 = 0x01
-	Updated int8 = 0x02
-	Deleted int8 = 0x04
+	Error   int8 = 0x01
+	End     int8 = 0x02
+	Created int8 = 0x10
+	Updated int8 = 0x20
+	Deleted int8 = 0x40
 )
 
 //
@@ -61,12 +63,20 @@ type Watch struct {
 	journal *Journal
 	// Started
 	started bool
+	// Done
+	done bool
 }
 
 //
 // End the watch.
 func (w *Watch) End() {
 	w.journal.End(w)
+}
+
+//
+// The watch has not ended.
+func (w *Watch) Alive() bool {
+	return !w.done
 }
 
 //
@@ -101,6 +111,11 @@ func (w *Watch) start(list *reflect.Value) {
 	}
 	w.Handler.Started()
 	run := func() {
+		defer func() {
+			w.started = false
+			w.done = true
+			w.Handler.End()
+		}()
 		for i := 0; i < list.Len(); i++ {
 			m := list.Index(i).Addr().Interface()
 			w.Handler.Created(
@@ -123,8 +138,6 @@ func (w *Watch) start(list *reflect.Value) {
 				w.Handler.Error(liberr.New("unknown action"))
 			}
 		}
-		w.started = false
-		w.Handler.End()
 	}
 
 	w.started = true
@@ -258,6 +271,17 @@ func (r *Journal) Unstage() {
 }
 
 //
+// Close the journal.
+// End all watches.
+func (r *Journal) Close() (err error) {
+	for _, w := range r.watchList {
+		r.End(w)
+	}
+
+	return
+}
+
+//
 // Model is being watched.
 // Determine if there a watch interested in the model.
 func (r *Journal) hasWatch(model Model) bool {
@@ -271,33 +295,34 @@ func (r *Journal) hasWatch(model Model) bool {
 }
 
 //
-// Stub event handler.
-type StubEventHandler struct{}
+// Stock event handler.
+// Provides default event methods.
+type StockEventHandler struct{}
 
 //
 // Watch has started.
-func (r *StubEventHandler) Started() {}
+func (r *StockEventHandler) Started() {}
 
 //
 // Watch has parity.
-func (r *StubEventHandler) Parity() {}
+func (r *StockEventHandler) Parity() {}
 
 //
 // A model has been created.
-func (r *StubEventHandler) Created(Event) {}
+func (r *StockEventHandler) Created(Event) {}
 
 //
 // A model has been updated.
-func (r *StubEventHandler) Updated(Event) {}
+func (r *StockEventHandler) Updated(Event) {}
 
 //
 // A model has been deleted.
-func (r *StubEventHandler) Deleted(Event) {}
+func (r *StockEventHandler) Deleted(Event) {}
 
 //
 // An error has occurred delivering an event.
-func (r *StubEventHandler) Error(error) {}
+func (r *StockEventHandler) Error(error) {}
 
 //
 // An event watch has ended.
-func (r *StubEventHandler) End() {}
+func (r *StockEventHandler) End() {}

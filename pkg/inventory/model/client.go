@@ -91,9 +91,11 @@ func (r *Client) Open(purge bool) error {
 }
 
 //
-// Close the database.
+// Close the database and associated journal.
 // Optionally purge (delete) the DB.
 func (r *Client) Close(purge bool) error {
+	r.dbMutex.Lock()
+	defer r.dbMutex.Unlock()
 	if r.db == nil {
 		return nil
 	}
@@ -103,7 +105,11 @@ func (r *Client) Close(purge bool) error {
 	}
 	r.db = nil
 	if purge {
-		os.Remove(r.path)
+		_ = os.Remove(r.path)
+	}
+	err = r.journal.Close()
+	if err != nil {
+		return liberr.Wrap(err)
 	}
 
 	return nil
@@ -229,9 +235,7 @@ func (r *Client) Watch(model Model, handler EventHandler) (*Watch, error) {
 		return nil, err
 	}
 	listPtr := reflect.New(reflect.SliceOf(mt))
-	err = Table{r.db}.List(
-		listPtr.Interface(),
-		ListOptions{Detail: 1})
+	err = Table{r.db}.List(listPtr.Interface(), ListOptions{})
 	if err != nil {
 		return nil, err
 	}
