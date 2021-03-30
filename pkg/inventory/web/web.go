@@ -18,8 +18,10 @@ type WebServer struct {
 	AllowedOrigins []string
 	// Reference to the container.
 	Container *container.Container
-	// Handlers
+	// Request handlers.
 	Handlers []RequestHandler
+	// Security.
+	Security []func(ctx *gin.Context)
 	// Compiled CORS origins.
 	allowedOrigins []*regexp.Regexp
 	// TLS.
@@ -46,6 +48,9 @@ func (w *WebServer) Start() {
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
+	for _, security := range w.Security {
+		router.Use(security)
+	}
 	w.buildOrigins()
 	w.addRoutes(router)
 	if w.TLS.Enabled {
