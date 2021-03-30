@@ -179,11 +179,14 @@ func (r *Client) Watch(
 	//
 	url = r.patchURL(url)
 	dialer := websocket.DefaultDialer
+	header := http.Header{
+		WatchHeader: []string{"1"},
+	}
+	for k, v := range r.Header {
+		header[k] = v
+	}
 	post := func(w *WatchReader) (pStatus int, pErr error) {
-		socket, response, pErr := dialer.Dial(
-			url, http.Header{
-				WatchHeader: []string{"1"},
-			})
+		socket, response, pErr := dialer.Dial(url, header)
 		if pErr != nil {
 			pErr = liberr.Wrap(pErr)
 			return
