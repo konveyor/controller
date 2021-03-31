@@ -178,7 +178,13 @@ func (r *Client) Watch(
 	handler EventHandler) (status int, w *Watch, err error) {
 	//
 	url = r.patchURL(url)
-	dialer := websocket.DefaultDialer
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 45 * time.Second,
+		Proxy:            http.ProxyFromEnvironment,
+	}
+	if ht, cast := r.Transport.(*http.Transport); cast {
+		dialer.TLSClientConfig = ht.TLSClientConfig
+	}
 	header := http.Header{
 		WatchHeader: []string{"1"},
 	}
