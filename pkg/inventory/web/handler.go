@@ -8,7 +8,6 @@ import (
 	"github.com/konveyor/controller/pkg/inventory/model"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -95,31 +94,6 @@ func (c *Parity) EnsureParity(r container.Reconciler, w time.Duration) int {
 	}
 
 	return http.StatusPartialContent
-}
-
-//
-// Authorized by k8s bearer token.
-type Authorized struct {
-	// Bearer token.
-	Token string
-}
-
-//
-// Prepare the handler to fulfil the request.
-// Set the `token` field using passed parameters.
-func (h *Authorized) Prepare(ctx *gin.Context) int {
-	h.setToken(ctx)
-	return http.StatusOK
-}
-
-//
-// Set the `Token` field.
-func (h *Authorized) setToken(ctx *gin.Context) {
-	header := ctx.GetHeader("Authorization")
-	fields := strings.Fields(header)
-	if len(fields) == 2 && fields[0] == "Bearer" {
-		h.Token = fields[1]
-	}
 }
 
 //
