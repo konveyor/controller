@@ -10,8 +10,10 @@ import (
 
 //
 // Create a new wrapped error.
-func New(m string) error {
-	return Wrap(errors.New(m))
+func New(m string, kvpair ...interface{}) error {
+	return Wrap(
+		errors.New(m),
+		kvpair...)
 }
 
 //
