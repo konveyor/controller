@@ -55,6 +55,19 @@ func TestError(t *testing.T) {
 	println(le.Stack())
 }
 
+func TestNew(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	err := New(
+		"create user failed",
+		"name", "Elmer",
+		"age", 10)
+	le := err.(*Error)
+	g.Expect(le).NotTo(gomega.BeNil())
+	g.Expect(len(le.stack)).To(gomega.Equal(5))
+	g.Expect(le.Error()).To(gomega.Equal(err.Error()))
+	g.Expect(len(le.Context())).To(gomega.Equal(4))
+}
+
 func TestUnwrap(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	err := errors.New("failed")
