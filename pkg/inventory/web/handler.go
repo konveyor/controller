@@ -104,7 +104,7 @@ type ResourceBuilder func(model.Model) interface{}
 // Event
 type Event struct {
 	// Action.
-	Action int8
+	Action uint8
 	// Affected Resource.
 	Resource interface{}
 	// Updated resource.
