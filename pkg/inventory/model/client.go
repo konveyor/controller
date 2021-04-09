@@ -2,6 +2,7 @@ package model
 
 import (
 	"database/sql"
+	"errors"
 	liberr "github.com/konveyor/controller/pkg/error"
 	fb "github.com/konveyor/controller/pkg/filebacked"
 	"os"
@@ -193,12 +194,15 @@ func (r *Client) Update(model Model) error {
 	r.dbMutex.Lock()
 	defer r.dbMutex.Unlock()
 	table := Table{r.db}
-	current := Clone(model)
-	err := table.Get(current)
-	if err != nil {
-		return err
+	current := model
+	if r.journal.hasWatch(model) {
+		current = Clone(model)
+		err := table.Get(current)
+		if err != nil {
+			return err
+		}
 	}
-	err = table.Update(model)
+	err := table.Update(model)
 	if err != nil {
 		return err
 	}
@@ -220,6 +224,15 @@ func (r *Client) Delete(model Model) error {
 	r.dbMutex.Lock()
 	defer r.dbMutex.Unlock()
 	table := Table{r.db}
+	if r.journal.hasWatch(model) {
+		err := table.Get(model)
+		if err != nil {
+			if errors.As(err, &NotFound) {
+				return nil
+			}
+			return err
+		}
+	}
 	err := table.Delete(model)
 	if err != nil {
 		return err
@@ -347,12 +360,18 @@ func (r *Tx) Insert(model Model) error {
 // Update the model.
 func (r *Tx) Update(model Model) error {
 	table := Table{r.real}
-	current := Clone(model)
-	err := table.Get(current)
-	if err != nil {
-		return err
+	current := model
+	if r.journal.hasWatch(model) {
+		current = Clone(model)
+		err := table.Get(current)
+		if err != nil {
+			if errors.As(err, &NotFound) {
+				return nil
+			}
+			return err
+		}
 	}
-	err = table.Update(model)
+	err := table.Update(model)
 	if err != nil {
 		return err
 	}
@@ -372,6 +391,15 @@ func (r *Tx) Update(model Model) error {
 // Delete the model.
 func (r *Tx) Delete(model Model) error {
 	table := Table{r.real}
+	if r.journal.hasWatch(model) {
+		err := table.Get(model)
+		if err != nil {
+			if errors.As(err, &NotFound) {
+				return nil
+			}
+			return err
+		}
+	}
 	err := table.Delete(model)
 	if err != nil {
 		return err

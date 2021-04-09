@@ -567,8 +567,20 @@ func TestWatch(t *testing.T) {
 	// Update
 	for i := 0; i < N; i++ {
 		object := &TestObject{
-			ID:   i,
-			Name: "Fudd",
+			ID:     i,
+			Name:   "Fudd",
+			Age:    18,
+			Int8:   8,
+			Int16:  16,
+			Int32:  32,
+			Bool:   true,
+			Object: TestEncoded{Name: "json"},
+			Slice:  []string{"hello", "world"},
+			Map:    map[string]int{"A": 1, "B": 2},
+			D4:     "d-4",
+			labels: Labels{
+				"id": fmt.Sprintf("v%d", i),
+			},
 		}
 		err = DB.Update(object)
 		g.Expect(err).To(gomega.BeNil())
