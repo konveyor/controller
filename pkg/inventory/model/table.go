@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	liberr "github.com/konveyor/controller/pkg/error"
+	fb "github.com/konveyor/controller/pkg/filebacked"
 	"github.com/mattn/go-sqlite3"
 	"reflect"
 	"regexp"
@@ -407,6 +408,50 @@ func (t Table) List(list interface{}, options ListOptions) error {
 	lv.Set(mList)
 
 	return nil
+}
+
+//
+// List the model in the DB.
+// Qualified by the list options.
+func (t Table) Iter(model interface{}, options ListOptions) (itr fb.Iterator, err error) {
+	fields, err := t.Fields(model)
+	if err != nil {
+		return
+	}
+	stmt, err := t.listSQL(t.Name(model), fields, &options)
+	if err != nil {
+		return
+	}
+	params := options.Params()
+	cursor, err := t.DB.Query(stmt, params...)
+	if err != nil {
+		err = liberr.Wrap(err)
+		return
+	}
+	defer cursor.Close()
+	list := fb.List{}
+	defer list.Close()
+	for cursor.Next() {
+		mt := reflect.TypeOf(model)
+		mPtr := reflect.New(mt.Elem())
+		mInt := mPtr.Interface()
+		mFields, _ := t.Fields(mInt)
+		options.fields = mFields
+		err = t.scan(cursor, options.Fields())
+		if err != nil {
+			err = liberr.Wrap(err)
+			return
+		}
+		err = list.Append(mPtr.Interface())
+		if err != nil {
+			err = liberr.Wrap(err)
+			return
+		}
+	}
+
+	itr = list.Iter()
+
+	return
 }
 
 //

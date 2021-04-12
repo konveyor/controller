@@ -2,9 +2,10 @@ package model
 
 import (
 	"database/sql"
+	"errors"
 	liberr "github.com/konveyor/controller/pkg/error"
+	fb "github.com/konveyor/controller/pkg/filebacked"
 	"os"
-	"reflect"
 	"sync"
 )
 
@@ -23,6 +24,8 @@ type DB interface {
 	Get(Model) error
 	// List models based on the type of slice.
 	List(interface{}, ListOptions) error
+	// List models.
+	Iter(interface{}, ListOptions) (fb.Iterator, error)
 	// Count based on the specified model.
 	Count(Model, Predicate) (int64, error)
 	// Begin a transaction.
@@ -129,6 +132,12 @@ func (r *Client) List(list interface{}, options ListOptions) error {
 }
 
 //
+// List models.
+func (r *Client) Iter(model interface{}, options ListOptions) (fb.Iterator, error) {
+	return Table{r.db}.Iter(model, options)
+}
+
+//
 // Count models.
 func (r *Client) Count(model Model, predicate Predicate) (int64, error) {
 	return Table{r.db}.Count(model, predicate)
@@ -171,8 +180,10 @@ func (r *Client) Insert(model Model) error {
 	if err != nil {
 		return err
 	}
-	r.journal.Created(model)
-	r.journal.Commit()
+	err = r.journal.Created(model, true)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -183,12 +194,15 @@ func (r *Client) Update(model Model) error {
 	r.dbMutex.Lock()
 	defer r.dbMutex.Unlock()
 	table := Table{r.db}
-	current := Clone(model)
-	err := table.Get(current)
-	if err != nil {
-		return err
+	current := model
+	if r.journal.hasWatch(model) {
+		current = Clone(model)
+		err := table.Get(current)
+		if err != nil {
+			return err
+		}
 	}
-	err = table.Update(model)
+	err := table.Update(model)
 	if err != nil {
 		return err
 	}
@@ -196,8 +210,10 @@ func (r *Client) Update(model Model) error {
 	if err != nil {
 		return err
 	}
-	r.journal.Updated(current, model)
-	r.journal.Commit()
+	err = r.journal.Updated(current, model, true)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -208,6 +224,15 @@ func (r *Client) Delete(model Model) error {
 	r.dbMutex.Lock()
 	defer r.dbMutex.Unlock()
 	table := Table{r.db}
+	if r.journal.hasWatch(model) {
+		err := table.Get(model)
+		if err != nil {
+			if errors.As(err, &NotFound) {
+				return nil
+			}
+			return err
+		}
+	}
 	err := table.Delete(model)
 	if err != nil {
 		return err
@@ -216,33 +241,60 @@ func (r *Client) Delete(model Model) error {
 	if err != nil {
 		return err
 	}
-	r.journal.Deleted(model)
-	r.journal.Commit()
+	err = r.journal.Deleted(model, true)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
 
 //
 // Watch model events.
-func (r *Client) Watch(model Model, handler EventHandler) (*Watch, error) {
-	mt := reflect.TypeOf(model)
-	switch mt.Kind() {
-	case reflect.Ptr:
-		mt = mt.Elem()
-	}
-	watch, err := r.journal.Watch(model, handler)
+func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) {
+	w, err = r.journal.Watch(model, handler)
 	if err != nil {
 		return nil, err
 	}
-	listPtr := reflect.New(reflect.SliceOf(mt))
-	err = Table{r.db}.List(listPtr.Interface(), ListOptions{})
+	itr, err := Table{r.db}.Iter(
+		model,
+		ListOptions{Detail: 1})
 	if err != nil {
 		return nil, err
+	} else {
+		defer itr.Close()
 	}
-	list := listPtr.Elem()
-	watch.start(&list)
+	list := fb.List{}
+	defer list.Close()
+	for {
+		model, hasNext, mErr := itr.Next()
+		if mErr != nil {
+			err = mErr
+			return
+		}
+		if !hasNext {
+			break
+		}
+		// Event.
+		event := &Event{
+			Action: Created,
+		}
+		mErr = list.Append(event)
+		if mErr != nil {
+			err = mErr
+			return
+		}
+		// Model.
+		mErr = list.Append(model)
+		if mErr != nil {
+			err = mErr
+			return
+		}
+	}
+	w.notify(list.Iter())
+	w.Start()
 
-	return watch, nil
+	return
 }
 
 //
@@ -296,7 +348,10 @@ func (r *Tx) Insert(model Model) error {
 	if err != nil {
 		return err
 	}
-	r.journal.Created(model)
+	err = r.journal.Created(model, false)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -305,12 +360,18 @@ func (r *Tx) Insert(model Model) error {
 // Update the model.
 func (r *Tx) Update(model Model) error {
 	table := Table{r.real}
-	current := Clone(model)
-	err := table.Get(current)
-	if err != nil {
-		return err
+	current := model
+	if r.journal.hasWatch(model) {
+		current = Clone(model)
+		err := table.Get(current)
+		if err != nil {
+			if errors.As(err, &NotFound) {
+				return nil
+			}
+			return err
+		}
 	}
-	err = table.Update(model)
+	err := table.Update(model)
 	if err != nil {
 		return err
 	}
@@ -318,7 +379,10 @@ func (r *Tx) Update(model Model) error {
 	if err != nil {
 		return err
 	}
-	r.journal.Updated(current, model)
+	err = r.journal.Updated(current, model, false)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -327,6 +391,15 @@ func (r *Tx) Update(model Model) error {
 // Delete the model.
 func (r *Tx) Delete(model Model) error {
 	table := Table{r.real}
+	if r.journal.hasWatch(model) {
+		err := table.Get(model)
+		if err != nil {
+			if errors.As(err, &NotFound) {
+				return nil
+			}
+			return err
+		}
+	}
 	err := table.Delete(model)
 	if err != nil {
 		return err
@@ -335,7 +408,10 @@ func (r *Tx) Delete(model Model) error {
 	if err != nil {
 		return err
 	}
-	r.journal.Deleted(model)
+	err = r.journal.Deleted(model, false)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -358,7 +434,7 @@ func (r *Tx) Commit() (err error) {
 		return
 	}
 
-	r.journal.Commit()
+	r.journal.Committed()
 
 	return
 }
@@ -381,7 +457,7 @@ func (r *Tx) End() (err error) {
 		return
 	}
 
-	r.journal.Unstage()
+	r.journal.Reset()
 
 	return
 }

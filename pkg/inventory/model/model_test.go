@@ -58,7 +58,7 @@ func (m *TestObject) Labels() Labels {
 
 // received event.
 type TestEvent struct {
-	action int8
+	action uint8
 	model  *TestObject
 }
 
@@ -469,6 +469,72 @@ func TestList(t *testing.T) {
 	g.Expect(count).To(gomega.Equal(int64(9)))
 }
 
+func TestIter(t *testing.T) {
+	var err error
+	g := gomega.NewGomegaWithT(t)
+	DB := New(
+		"/tmp/test.db",
+		&Label{},
+		&TestObject{})
+	err = DB.Open(true)
+	g.Expect(err).To(gomega.BeNil())
+	N := 10
+	for i := 0; i < N; i++ {
+		object := &TestObject{
+			ID:     i,
+			Name:   "Elmer",
+			Age:    18,
+			Int8:   8,
+			Int16:  16,
+			Int32:  32,
+			Bool:   true,
+			Object: TestEncoded{Name: "json"},
+			Slice:  []string{"hello", "world"},
+			Map:    map[string]int{"A": 1, "B": 2},
+			D4:     "d-4",
+			labels: Labels{
+				"id": fmt.Sprintf("v%d", i),
+			},
+		}
+		err = DB.Insert(object)
+		g.Expect(err).To(gomega.BeNil())
+	}
+	// List all; detail level=0
+	itr, err := DB.Iter(
+		&TestObject{},
+		ListOptions{})
+	g.Expect(err).To(gomega.BeNil())
+	defer itr.Close()
+	g.Expect(itr.Len()).To(gomega.Equal(10))
+	var list []TestObject
+	for {
+		object := TestObject{}
+		hasNext, err := itr.NextWith(&object)
+		if !hasNext {
+			break
+		}
+		g.Expect(err).To(gomega.BeNil())
+		list = append(list, object)
+	}
+	g.Expect(len(list)).To(gomega.Equal(10))
+	// List all; detail level=0
+	itr, err = DB.Iter(
+		&TestObject{},
+		ListOptions{})
+	defer itr.Close()
+	g.Expect(err).To(gomega.BeNil())
+	defer itr.Close()
+	for {
+		object, hasNext, err := itr.Next()
+		g.Expect(err).To(gomega.BeNil())
+		if !hasNext {
+			break
+		}
+		_, cast := object.(Model)
+		g.Expect(cast).To(gomega.BeTrue())
+	}
+}
+
 func TestWatch(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	DB := New(
@@ -501,8 +567,20 @@ func TestWatch(t *testing.T) {
 	// Update
 	for i := 0; i < N; i++ {
 		object := &TestObject{
-			ID:   i,
-			Name: "Fudd",
+			ID:     i,
+			Name:   "Fudd",
+			Age:    18,
+			Int8:   8,
+			Int16:  16,
+			Int32:  32,
+			Bool:   true,
+			Object: TestEncoded{Name: "json"},
+			Slice:  []string{"hello", "world"},
+			Map:    map[string]int{"A": 1, "B": 2},
+			D4:     "d-4",
+			labels: Labels{
+				"id": fmt.Sprintf("v%d", i),
+			},
 		}
 		err = DB.Update(object)
 		g.Expect(err).To(gomega.BeNil())
@@ -550,7 +628,7 @@ func TestWatch(t *testing.T) {
 	// 5. Handler C created.  handler C should get (N) CREATE events.
 	// 6. (N) models deleted. handler A,B,C should get (N) DELETE events.
 	all := []TestEvent{}
-	for _, action := range []int8{Created, Updated, Deleted} {
+	for _, action := range []uint8{Created, Updated, Deleted} {
 		for i := 0; i < N; i++ {
 			all = append(
 				all,
@@ -587,7 +665,7 @@ func TestWatch(t *testing.T) {
 		return true
 	}()).To(gomega.BeTrue())
 	all = []TestEvent{}
-	for _, action := range []int8{Created, Deleted} {
+	for _, action := range []uint8{Created, Deleted} {
 		for i := 0; i < N; i++ {
 			all = append(
 				all,

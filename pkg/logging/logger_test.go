@@ -15,9 +15,7 @@ type entry struct {
 }
 
 type fake struct {
-	entry  []entry
-	values []interface{}
-	name   string
+	entry []entry
 }
 
 func (l *fake) Info(message string, kvpair ...interface{}) {
@@ -39,23 +37,21 @@ func (l *fake) Error(err error, message string, kvpair ...interface{}) {
 		})
 }
 
-func (l *fake) Enabled() bool {
+func (l fake) Enabled() bool {
 	return true
 }
 
-func (l *fake) V(level int) logr.InfoLogger {
+func (l fake) V(level int) logr.InfoLogger {
 	return nil
 }
 
-func (l *fake) WithName(name string) logr.Logger {
-	l.name = name
-	return l
+func (l fake) WithName(name string) logr.Logger {
+	return nil
 }
 
 //
 // Get logger with values.
-func (l *fake) WithValues(kvpair ...interface{}) logr.Logger {
-	l.values = kvpair
+func (l fake) WithValues(kvpair ...interface{}) logr.Logger {
 	return nil
 }
 
@@ -67,25 +63,11 @@ func TestLogger(t *testing.T) {
 	log.Info("hello")
 	log.Error(errors.New("A"), "thing failed")
 	log.Trace(errors.New("B"))
-	g.Expect(log.name).To(gomega.Equal("Test"))
-	log.Reset()
 	//
-	// Fake.
-	NameGenerator = func(name string) string {
-		return name + "1234"
-	}
-	Factory = func(name string) logr.Logger {
-		return &fake{
-			entry: []entry{},
-			name:  name,
-		}
-	}
-	log = WithName("Test")
-	f := log.Real.(*fake)
-	g.Expect(f.name).To(gomega.Equal("Test"))
+	// Faked
 	log.Reset()
-	f = log.Real.(*fake)
-	g.Expect(f.name).To(gomega.Equal("Test|1234"))
+	f := &fake{entry: []entry{}}
+	log.Real = f
 	// Info
 	log.Info("hello")
 	g.Expect(len(f.entry)).To(gomega.Equal(1))

@@ -16,16 +16,6 @@ const (
 )
 
 //
-// Logger factory.
-// As: func(string) log.Logger
-var Factory = logf.Log.WithName
-
-//
-// Name generator.
-// As: func(string) string
-var NameGenerator = names.SimpleNameGenerator.GenerateName
-
-//
 // Logger
 // Delegates functionality to the wrapped `Real` logger.
 // Provides:
@@ -41,10 +31,10 @@ type Logger struct {
 // Get a named logger.
 func WithName(name string) Logger {
 	logger := Logger{
-		Real: Factory(name),
+		Real: logf.Log.WithName(name),
 		name: name,
 	}
-
+	logger.Reset()
 	return logger
 }
 
@@ -53,8 +43,8 @@ func WithName(name string) Logger {
 // Updates the generated correlation suffix in the name.
 func (l *Logger) Reset() {
 	name := fmt.Sprintf("%s|", l.name)
-	name = NameGenerator(name)
-	l.Real = Factory(name)
+	name = names.SimpleNameGenerator.GenerateName(name)
+	l.Real = logf.Log.WithName(name)
 }
 
 //
