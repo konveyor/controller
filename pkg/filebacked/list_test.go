@@ -2,8 +2,37 @@ package filebacked
 
 import (
 	"github.com/onsi/gomega"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	clean := func() {
+		d, err := os.Open(WorkingDir)
+		if err != nil {
+			return
+		}
+		defer d.Close()
+		names, err := d.Readdirnames(-1)
+		if err != nil {
+			return
+		}
+		for _, name := range names {
+			if filepath.Ext(name) != Extension {
+				continue
+			}
+			err = os.Remove(filepath.Join(WorkingDir, name))
+			if err != nil {
+				return
+			}
+		}
+	}
+	clean()
+	m.Run()
+	clean()
+}
 
 func TestList(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
@@ -44,6 +73,11 @@ func TestList(t *testing.T) {
 			})
 	}
 
+	fileExists := func(path string) bool {
+		_, err := os.Stat(path)
+		return !os.IsNotExist(err)
+	}
+
 	cat := &catalog
 
 	list := List{}
@@ -60,7 +94,6 @@ func TestList(t *testing.T) {
 
 	// iterate
 	itr := list.Iter()
-	defer itr.Close()
 	g.Expect(itr.Len()).To(gomega.Equal(len(input)))
 	for i := 0; i < len(input); i++ {
 		object, hasNext, err := itr.Next()
@@ -69,11 +102,12 @@ func TestList(t *testing.T) {
 		g.Expect(hasNext).To(gomega.BeTrue())
 		g.Expect(itr.Len()).To(gomega.Equal(len(input)))
 	}
+	itr.Close()
+	g.Expect(fileExists(itr.(*Reader).path)).To(gomega.BeFalse())
 
 	n := 0
 	itr = list.Iter()
 	g.Expect(itr.Error()).To(gomega.BeNil())
-	defer itr.Close()
 	for {
 		object, hasNext, err := itr.Next()
 		g.Expect(err).To(gomega.BeNil())
@@ -87,11 +121,14 @@ func TestList(t *testing.T) {
 		g.Expect(hasNext).To(gomega.BeTrue())
 	}
 	g.Expect(n).To(gomega.Equal(len(input)))
+	itr.Close()
+	g.Expect(fileExists(itr.(*Reader).path)).To(gomega.BeFalse())
 
 	n = 0
 	itr = list.Iter()
+	itr2 := list.Iter()
+	itr3 := list.Iter()
 	g.Expect(itr.Error()).To(gomega.BeNil())
-	defer itr.Close()
 	for {
 		person := &Person{}
 		hasNext, err := itr.NextWith(person)
@@ -115,5 +152,23 @@ func TestList(t *testing.T) {
 		g.Expect(hasNext).To(gomega.BeTrue())
 	}
 	g.Expect(n).To(gomega.Equal(len(input)))
+	itr.Close()
+	itr2.Close()
+	itr3.Close()
+	g.Expect(fileExists(itr.(*Reader).path)).To(gomega.BeFalse())
+	g.Expect(fileExists(itr2.(*Reader).path)).To(gomega.BeFalse())
+	g.Expect(fileExists(itr3.(*Reader).path)).To(gomega.BeFalse())
 
+	// Finalizer.
+	itr4path := ""
+	if list.Len() > 0 {
+		itr4 := list.Iter()
+		itr4path = itr4.(*Reader).path
+	}
+	runtime.GC()
+	g.Expect(fileExists(itr4path)).To(gomega.BeFalse())
+
+	// List closed.
+	list.Close()
+	g.Expect(fileExists(list.writer.path)).To(gomega.BeFalse())
 }

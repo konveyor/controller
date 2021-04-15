@@ -18,6 +18,7 @@ import (
 	"io"
 	"os"
 	pathlib "path"
+	"runtime"
 )
 
 //
@@ -77,6 +78,11 @@ func (w *Writer) Reader() (reader *Reader) {
 		error: liberr.Wrap(err),
 		path:  path,
 	}
+	runtime.SetFinalizer(
+		reader,
+		func(r *Reader) {
+			r.Close()
+		})
 
 	return
 }
@@ -357,9 +363,10 @@ func (r *Reader) open() (err error) {
 func (r *Reader) Close() {
 	if r.file != nil {
 		_ = r.file.Close()
-		_ = os.Remove(r.path)
 		r.file = nil
 	}
+	// Unlink.
+	_ = os.Remove(r.path)
 }
 
 //
