@@ -32,8 +32,13 @@ type EventMapper struct {
 //
 // Create event.
 func (r *EventMapper) Create(event event.CreateEvent) {
+	kind := ToKind(event.Object)
+	log.V(4).Info(
+		"mapper: created event.",
+		"kind",
+		kind)
 	refOwner := Owner{
-		Kind:      ToKind(event.Object),
+		Kind:      kind,
 		Namespace: event.Meta.GetNamespace(),
 		Name:      event.Meta.GetName(),
 	}
@@ -45,13 +50,18 @@ func (r *EventMapper) Create(event event.CreateEvent) {
 //
 // Update event.
 func (r *EventMapper) Update(event event.UpdateEvent) {
+	kind := ToKind(event.ObjectNew)
+	log.V(4).Info(
+		"mapper: updated event.",
+		"kind",
+		kind)
 	r.Map.DeleteOwner(Owner{
-		Kind:      ToKind(event.ObjectOld),
+		Kind:      kind,
 		Namespace: event.MetaOld.GetNamespace(),
 		Name:      event.MetaOld.GetName(),
 	})
 	refOwner := Owner{
-		Kind:      ToKind(event.ObjectNew),
+		Kind:      kind,
 		Namespace: event.MetaNew.GetNamespace(),
 		Name:      event.MetaNew.GetName(),
 	}
@@ -63,8 +73,13 @@ func (r *EventMapper) Update(event event.UpdateEvent) {
 //
 // Delete Mapper.
 func (r *EventMapper) Delete(event event.DeleteEvent) {
+	kind := ToKind(event.Object)
+	log.V(4).Info(
+		"mapper: deleted event.",
+		"kind",
+		kind)
 	r.Map.DeleteOwner(Owner{
-		Kind:      ToKind(event.Object),
+		Kind:      kind,
 		Namespace: event.Meta.GetNamespace(),
 		Name:      event.Meta.GetName(),
 	})

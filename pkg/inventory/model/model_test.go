@@ -74,7 +74,7 @@ type TestHandler struct {
 	done    bool
 }
 
-func (w *TestHandler) Started() {
+func (w *TestHandler) Started(uint64) {
 	w.started = true
 }
 
@@ -119,7 +119,7 @@ type MutatingHandler struct {
 	updated []int
 }
 
-func (w *MutatingHandler) Started() {
+func (w *MutatingHandler) Started(uint64) {
 	w.started = true
 }
 

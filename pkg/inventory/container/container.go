@@ -3,11 +3,16 @@ package container
 import (
 	liberr "github.com/konveyor/controller/pkg/error"
 	"github.com/konveyor/controller/pkg/inventory/model"
+	"github.com/konveyor/controller/pkg/logging"
 	"github.com/konveyor/controller/pkg/ref"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sync"
 )
+
+//
+// Logger.
+var log = logging.WithName("container")
 
 //
 // Reconciler key.
@@ -47,10 +52,11 @@ func (c *Container) List() []Reconciler {
 //
 // Add a reconciler.
 func (c *Container) Add(reconciler Reconciler) (err error) {
+	owner := reconciler.Owner()
+	key := c.key(owner)
 	add := func() {
 		c.mutex.Lock()
 		defer c.mutex.Unlock()
-		key := c.key(reconciler.Owner())
 		if _, found := c.content[key]; found {
 			err = liberr.New("duplicate")
 			return
@@ -66,16 +72,21 @@ func (c *Container) Add(reconciler Reconciler) (err error) {
 		return liberr.Wrap(err)
 	}
 
+	log.V(3).Info(
+		"reconciler added.",
+		"owner",
+		key)
+
 	return
 }
 
 //
 // Replace a reconciler.
 func (c *Container) Replace(reconciler Reconciler) (p Reconciler, found bool, err error) {
+	key := c.key(reconciler.Owner())
 	replace := func() {
 		c.mutex.Lock()
 		defer c.mutex.Unlock()
-		key := c.key(reconciler.Owner())
 		if p, found := c.content[key]; found {
 			p.Shutdown()
 		}
@@ -86,6 +97,11 @@ func (c *Container) Replace(reconciler Reconciler) (p Reconciler, found bool, er
 	if err != nil {
 		err = liberr.Wrap(err)
 	}
+
+	log.V(3).Info(
+		"reconciler replaced.",
+		"owner",
+		key)
 
 	return
 }
@@ -99,6 +115,10 @@ func (c *Container) Delete(owner meta.Object) (p Reconciler, found bool) {
 	if p, found = c.content[key]; found {
 		delete(c.content, key)
 		p.Shutdown()
+		log.V(3).Info(
+			"reconciler deleted.",
+			"owner",
+			key)
 	}
 
 	return

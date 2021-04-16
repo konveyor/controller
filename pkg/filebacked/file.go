@@ -15,10 +15,14 @@ import (
 	"encoding/gob"
 	"github.com/google/uuid"
 	liberr "github.com/konveyor/controller/pkg/error"
+	"github.com/konveyor/controller/pkg/logging"
 	"io"
 	"os"
 	pathlib "path"
+	"runtime"
 )
+
+var log = logging.WithName("filebacked")
 
 //
 // File extension.
@@ -62,6 +66,13 @@ func (w *Writer) Append(object interface{}) (err error) {
 	// Write entry.
 	err = w.writeEntry(kind, bfr)
 
+	log.V(5).Info(
+		"writer: appended object.",
+		"path",
+		w.path,
+		"kind",
+		kind)
+
 	return
 }
 
@@ -72,11 +83,25 @@ func (w *Writer) Reader() (reader *Reader) {
 	err := w.file.Sync()
 	if err == nil {
 		err = os.Link(w.path, path)
+		if err != nil {
+			log.V(3).Error(err, "link failed.")
+		}
 	}
 	reader = &Reader{
 		error: liberr.Wrap(err),
 		path:  path,
 	}
+	runtime.SetFinalizer(
+		reader,
+		func(r *Reader) {
+			r.Close()
+		})
+	log.V(4).Info(
+		"writer: reader created.",
+		"path",
+		w.path,
+		"link",
+		reader.path)
 
 	return
 }
@@ -84,11 +109,17 @@ func (w *Writer) Reader() (reader *Reader) {
 //
 // Close the writer.
 func (w *Writer) Close() {
-	if w.file != nil {
-		_ = w.file.Close()
+	defer func() {
 		_ = os.Remove(w.path)
-		w.file = nil
+	}()
+	if w.file == nil {
+		return
 	}
+	_ = w.file.Close()
+	log.V(4).Info(
+		"writer: closed.",
+		"path",
+		w.path)
 }
 
 //
@@ -108,6 +139,10 @@ func (w *Writer) open() (err error) {
 		err = liberr.Wrap(err)
 		return
 	}
+	log.V(4).Info(
+		"writer: opened.",
+		"path",
+		w.path)
 
 	return
 }
@@ -149,6 +184,14 @@ func (w *Writer) writeEntry(kind uint16, bfr bytes.Buffer) (err error) {
 		err = liberr.Wrap(err)
 		return
 	}
+	log.V(5).Info(
+		"writer: write entry.",
+		"path",
+		w.path,
+		"kind",
+		kind,
+		"length",
+		w.length)
 
 	return
 }
@@ -244,6 +287,12 @@ func (r *Reader) NextWith(object interface{}) (hasNext bool, err error) {
 		err = liberr.Wrap(err)
 		return
 	}
+	log.V(5).Info(
+		"reader: read (with) next.",
+		"path",
+		r.path,
+		"next",
+		hasNext)
 
 	return
 }
@@ -280,6 +329,14 @@ func (r *Reader) Next() (object interface{}, hasNext bool, err error) {
 		err = liberr.Wrap(err)
 		return
 	}
+	log.V(5).Info(
+		"reader: read next.",
+		"path",
+		r.path,
+		"kind",
+		kind,
+		"next",
+		hasNext)
 
 	return
 }
@@ -348,6 +405,10 @@ func (r *Reader) open() (err error) {
 		err = liberr.Wrap(err)
 		return
 	}
+	log.V(4).Info(
+		"reader: opened.",
+		"path",
+		r.path)
 
 	return
 }
@@ -355,11 +416,17 @@ func (r *Reader) open() (err error) {
 //
 // Close the reader.
 func (r *Reader) Close() {
-	if r.file != nil {
-		_ = r.file.Close()
+	defer func() {
 		_ = os.Remove(r.path)
-		r.file = nil
+	}()
+	if r.file == nil {
+		return
 	}
+	_ = r.file.Close()
+	log.V(4).Info(
+		"reader: closed.",
+		"path",
+		r.path)
 }
 
 //

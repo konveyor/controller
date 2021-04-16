@@ -5,9 +5,14 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/konveyor/controller/pkg/inventory/container"
+	"github.com/konveyor/controller/pkg/logging"
 	"regexp"
 	"time"
 )
+
+//
+// Package logger.
+var log = logging.WithName("web")
 
 //
 // Web server
@@ -53,6 +58,11 @@ func (w *WebServer) Start() {
 	} else {
 		go router.Run(w.address())
 	}
+
+	log.V(3).Info(
+		"web: engine started.",
+		"address",
+		w.address())
 }
 
 //

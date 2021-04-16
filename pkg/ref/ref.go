@@ -1,6 +1,7 @@
 package ref
 
 import (
+	"github.com/konveyor/controller/pkg/logging"
 	"k8s.io/api/core/v1"
 	"reflect"
 )
@@ -8,6 +9,8 @@ import (
 // Global
 var Map *RefMap
 var Mapper *EventMapper
+
+var log = logging.WithName("ref")
 
 //
 // Build globals.

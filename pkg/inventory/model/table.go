@@ -255,7 +255,7 @@ func (t Table) Insert(model interface{}) error {
 	if err != nil {
 		return err
 	}
-	t.SetPk(fields)
+	_ = t.SetPk(fields)
 	stmt, err := t.insertSQL(t.Name(model), fields)
 	if err != nil {
 		return err
@@ -268,12 +268,17 @@ func (t Table) Insert(model interface{}) error {
 				return t.Update(model)
 			}
 		}
-		return liberr.Wrap(err)
+		return liberr.Wrap(err, "sql", stmt)
 	}
 	_, err = r.RowsAffected()
 	if err != nil {
 		return liberr.Wrap(err)
 	}
+
+	log.V(5).Info(
+		"table: model inserted.",
+		"sql",
+		stmt)
 
 	return nil
 }
@@ -286,7 +291,7 @@ func (t Table) Update(model interface{}) error {
 	if err != nil {
 		return err
 	}
-	t.SetPk(fields)
+	_ = t.SetPk(fields)
 	stmt, err := t.updateSQL(t.Name(model), fields)
 	if err != nil {
 		return err
@@ -294,7 +299,7 @@ func (t Table) Update(model interface{}) error {
 	params := t.Params(fields)
 	r, err := t.DB.Exec(stmt, params...)
 	if err != nil {
-		return liberr.Wrap(err)
+		return liberr.Wrap(err, "sql", stmt)
 	}
 	nRows, err := r.RowsAffected()
 	if err != nil {
@@ -303,6 +308,11 @@ func (t Table) Update(model interface{}) error {
 	if nRows == 0 {
 		return liberr.Wrap(NotFound)
 	}
+
+	log.V(5).Info(
+		"table: model updated.",
+		"sql",
+		stmt)
 
 	return nil
 }
@@ -315,7 +325,7 @@ func (t Table) Delete(model interface{}) error {
 	if err != nil {
 		return err
 	}
-	t.SetPk(fields)
+	_ = t.SetPk(fields)
 	stmt, err := t.deleteSQL(t.Name(model), fields)
 	if err != nil {
 		return err
@@ -323,7 +333,7 @@ func (t Table) Delete(model interface{}) error {
 	params := t.Params(fields)
 	r, err := t.DB.Exec(stmt, params...)
 	if err != nil {
-		return liberr.Wrap(err)
+		return liberr.Wrap(err, "sql", stmt)
 	}
 	nRows, err := r.RowsAffected()
 	if err != nil {
@@ -332,6 +342,11 @@ func (t Table) Delete(model interface{}) error {
 	if nRows == 0 {
 		return nil
 	}
+
+	log.V(5).Info(
+		"table: model deleted.",
+		"sql",
+		stmt)
 
 	return nil
 }
@@ -345,7 +360,7 @@ func (t Table) Get(model interface{}) error {
 	if err != nil {
 		return err
 	}
-	t.SetPk(fields)
+	_ = t.SetPk(fields)
 	stmt, err := t.getSQL(t.Name(model), fields)
 	if err != nil {
 		return err
@@ -353,8 +368,11 @@ func (t Table) Get(model interface{}) error {
 	params := t.Params(fields)
 	row := t.DB.QueryRow(stmt, params...)
 	err = t.scan(row, fields)
+	if err != nil {
+		err = liberr.Wrap(err, "sql", stmt)
+	}
 
-	return liberr.Wrap(err)
+	return err
 }
 
 //
@@ -388,9 +406,11 @@ func (t Table) List(list interface{}, options ListOptions) error {
 	params := options.Params()
 	cursor, err := t.DB.Query(stmt, params...)
 	if err != nil {
-		return liberr.Wrap(err)
+		return liberr.Wrap(err, "sql", stmt)
 	}
-	defer cursor.Close()
+	defer func() {
+		_ = cursor.Close()
+	}()
 	mList := reflect.MakeSlice(lt, 0, 0)
 	for cursor.Next() {
 		mt := reflect.TypeOf(model)
@@ -406,6 +426,11 @@ func (t Table) List(list interface{}, options ListOptions) error {
 	}
 
 	lv.Set(mList)
+
+	log.V(5).Info(
+		"table: model listed.",
+		"sql",
+		stmt)
 
 	return nil
 }
@@ -425,10 +450,12 @@ func (t Table) Iter(model interface{}, options ListOptions) (itr fb.Iterator, er
 	params := options.Params()
 	cursor, err := t.DB.Query(stmt, params...)
 	if err != nil {
-		err = liberr.Wrap(err)
+		err = liberr.Wrap(err, "sql", stmt)
 		return
 	}
-	defer cursor.Close()
+	defer func() {
+		_ = cursor.Close()
+	}()
 	list := fb.List{}
 	defer list.Close()
 	for cursor.Next() {
@@ -450,6 +477,11 @@ func (t Table) Iter(model interface{}, options ListOptions) (itr fb.Iterator, er
 	}
 
 	itr = list.Iter()
+
+	log.V(5).Info(
+		"table: model (iter) listed.",
+		"sql",
+		stmt)
 
 	return
 }
@@ -474,8 +506,13 @@ func (t Table) Count(model interface{}, predicate Predicate) (int64, error) {
 	row := t.DB.QueryRow(stmt, params...)
 	err = row.Scan(&count)
 	if err != nil {
-		return 0, liberr.Wrap(err)
+		return 0, liberr.Wrap(err, "sql", stmt)
 	}
+
+	log.V(5).Info(
+		"table: model counted.",
+		"sql",
+		stmt)
 
 	return count, nil
 }
