@@ -1,18 +1,26 @@
 package model
 
 import (
+	"fmt"
+	"github.com/go-logr/logr"
 	liberr "github.com/konveyor/controller/pkg/error"
 	fb "github.com/konveyor/controller/pkg/filebacked"
+	"github.com/konveyor/controller/pkg/logging"
 	"github.com/konveyor/controller/pkg/ref"
 	"sync"
 )
 
 //
+// Serial number pool.
+var serial Serial
+
+//
 // Event Actions.
 var (
-	Parity  uint8 = 0x00
-	Error   uint8 = 0x01
-	End     uint8 = 0x02
+	Started uint8 = 0x00
+	Parity  uint8 = 0x01
+	Error   uint8 = 0x02
+	End     uint8 = 0x04
 	Created uint8 = 0x10
 	Updated uint8 = 0x20
 	Deleted uint8 = 0x40
@@ -21,6 +29,8 @@ var (
 //
 // Model event.
 type Event struct {
+	// ID.
+	ID uint64
 	// The event subject.
 	Model Model
 	// The event action (created|updated|deleted).
@@ -30,10 +40,39 @@ type Event struct {
 }
 
 //
+// String representation.
+func (r *Event) String() string {
+	action := "unknown"
+	switch r.Action {
+	case Parity:
+		action = "parity"
+	case Error:
+		action = "error"
+	case End:
+		action = "end"
+	case Created:
+		action = "created"
+	case Updated:
+		action = "updated"
+	case Deleted:
+		action = "deleted"
+	}
+	model := ""
+	if r.Model != nil {
+		model = r.Model.String()
+	}
+	return fmt.Sprintf(
+		"event-%.4d: %s model=%s",
+		r.ID,
+		action,
+		model)
+}
+
+//
 // Event handler.
 type EventHandler interface {
 	// Watch has started.
-	Started()
+	Started(watchID uint64)
 	// Parity marker.
 	// The watch has delivered the initial set
 	// of `Created` events.
@@ -57,14 +96,28 @@ type Watch struct {
 	Model Model
 	// Event handler.
 	Handler EventHandler
+	// ID
+	id uint64
 	// Event queue.
 	queue chan fb.Iterator
 	// Journal.
 	journal *Journal
+	// Logger.
+	log logr.Logger
 	// Started
 	started bool
 	// Done
 	done bool
+}
+
+//
+// String representation.
+func (w *Watch) String() string {
+	kind := ref.ToKind(w.Model)
+	return fmt.Sprintf(
+		"watch-%.4d: model=%s",
+		w.id,
+		kind)
 }
 
 //
@@ -95,8 +148,9 @@ func (w *Watch) notify(itr fb.Iterator) {
 	case w.queue <- itr:
 	default:
 		itr.Close()
-		err := liberr.New("full queue, event discarded")
-		w.Handler.Error(err)
+		description := "full queue, event discarded"
+		w.Handler.Error(liberr.New(description))
+		w.log.V(3).Info(description)
 	}
 }
 
@@ -107,12 +161,14 @@ func (w *Watch) Start() {
 	if w.started {
 		return
 	}
-	w.Handler.Started()
+	w.log.V(3).Info("watch started.")
+	w.Handler.Started(w.id)
 	run := func() {
 		defer func() {
 			w.started = false
 			w.done = true
 			w.Handler.End()
+			w.log.V(3).Info("watch stopped.")
 		}()
 		count := 0
 		for itr := range w.queue {
@@ -120,6 +176,7 @@ func (w *Watch) Start() {
 				event := Event{}
 				event, hasNext, err := w.next(itr)
 				if err != nil {
+					w.log.V(3).Error(err, "next() failed.")
 					w.Handler.Error(err)
 					break
 				}
@@ -129,6 +186,10 @@ func (w *Watch) Start() {
 				if !w.Match(event.Model) {
 					continue
 				}
+				w.log.V(5).Info(
+					"event received.",
+					"event",
+					event.String())
 				switch event.Action {
 				case Created:
 					w.Handler.Created(event)
@@ -143,6 +204,7 @@ func (w *Watch) Start() {
 			count++
 			itr.Close()
 			if count == 1 {
+				w.log.V(3).Info("has parity.")
 				w.Handler.Parity()
 			}
 		}
@@ -213,6 +275,8 @@ func (w *Watch) terminate() {
 // Provides model watch events.
 type Journal struct {
 	mutex sync.RWMutex
+	// Logger.
+	log logr.Logger
 	// List of registered watches.
 	watchList []*Watch
 	// Recorded (staged) event list.
@@ -229,13 +293,27 @@ type Journal struct {
 func (r *Journal) Watch(model Model, handler EventHandler) (*Watch, error) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+	id := serial.next(0)
+	log := logging.WithName("journal|watch").WithValues(
+		"id",
+		id,
+		"model",
+		ref.ToKind(model))
 	watch := &Watch{
 		Handler: handler,
 		Model:   model,
+		id:      id,
 		journal: r,
+		log:     log,
 	}
 	r.watchList = append(r.watchList, watch)
 	watch.queue = make(chan fb.Iterator, 250)
+
+	r.log.V(3).Info(
+		"watch created.",
+		"watch",
+		watch.String())
+
 	return watch, nil
 }
 
@@ -251,6 +329,10 @@ func (r *Journal) End(watch *Watch) {
 			continue
 		}
 		w.terminate()
+		r.log.V(3).Info(
+			"watch end requested.",
+			"watch",
+			watch.String())
 	}
 
 	r.watchList = kept
@@ -266,14 +348,16 @@ func (r *Journal) Created(model Model, committed bool) (err error) {
 		return
 	}
 	// Event.
-	err = r.staged.Append(
-		Event{
-			Action: Created,
-		})
+	event := Event{
+		ID:     serial.next(1),
+		Action: Created,
+	}
+	err = r.staged.Append(event)
 	if err != nil {
 		return
 	}
 	// Event.Model.
+	event.Model = model
 	err = r.staged.Append(model)
 	if err != nil {
 		return
@@ -281,6 +365,11 @@ func (r *Journal) Created(model Model, committed bool) (err error) {
 	if committed {
 		r.committed()
 	}
+
+	r.log.V(4).Info(
+		"event staged.",
+		"event",
+		event.String())
 
 	return
 }
@@ -295,19 +384,22 @@ func (r *Journal) Updated(model Model, updated Model, committed bool) (err error
 		return
 	}
 	// Event.
-	err = r.staged.Append(
-		Event{
-			Action: Updated,
-		})
+	event := Event{
+		ID:     serial.next(1),
+		Action: Updated,
+	}
+	err = r.staged.Append(event)
 	if err != nil {
 		return
 	}
 	// Event.Model.
+	event.Model = model
 	err = r.staged.Append(model)
 	if err != nil {
 		return
 	}
 	// Event.Updated.
+	event.Updated = updated
 	err = r.staged.Append(updated)
 	if err != nil {
 		return
@@ -315,6 +407,11 @@ func (r *Journal) Updated(model Model, updated Model, committed bool) (err error
 	if committed {
 		r.committed()
 	}
+
+	r.log.V(4).Info(
+		"event staged.",
+		"event",
+		event.String())
 
 	return
 }
@@ -329,14 +426,16 @@ func (r *Journal) Deleted(model Model, committed bool) (err error) {
 		return
 	}
 	// Event.
-	err = r.staged.Append(
-		Event{
-			Action: Deleted,
-		})
+	event := Event{
+		ID:     serial.next(1),
+		Action: Deleted,
+	}
+	err = r.staged.Append(event)
 	if err != nil {
 		return
 	}
 	// Event.Model.
+	event.Model = model
 	err = r.staged.Append(model)
 	if err != nil {
 		return
@@ -344,6 +443,11 @@ func (r *Journal) Deleted(model Model, committed bool) (err error) {
 	if committed {
 		r.committed()
 	}
+
+	r.log.V(4).Info(
+		"event staged.",
+		"event",
+		event.String())
 
 	return
 }
@@ -354,6 +458,10 @@ func (r *Journal) Deleted(model Model, committed bool) (err error) {
 func (r *Journal) Committed() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+	r.log.V(4).Info(
+		"staged committed.",
+		"count",
+		r.staged.Len())
 	r.committed()
 }
 
@@ -363,6 +471,9 @@ func (r *Journal) Committed() {
 func (r *Journal) Reset() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	r.log.V(4).Info("staged reset.")
+
 	r.staged.Close()
 	r.staged = fb.List{}
 }
@@ -375,6 +486,8 @@ func (r *Journal) Close() (err error) {
 	for _, w := range r.watchList {
 		r.End(w)
 	}
+
+	r.log.V(3).Info("journal closed.")
 
 	return
 }
@@ -412,7 +525,7 @@ type StockEventHandler struct{}
 
 //
 // Watch has started.
-func (r *StockEventHandler) Started() {}
+func (r *StockEventHandler) Started(uint64) {}
 
 //
 // Watch has parity.
@@ -437,3 +550,24 @@ func (r *StockEventHandler) Error(error) {}
 //
 // An event watch has ended.
 func (r *StockEventHandler) End() {}
+
+//
+// Serial number pool.
+type Serial struct {
+	mutex sync.Mutex
+	pool  map[int]uint64
+}
+
+//
+// Next serial number.
+func (r *Serial) next(key int) (sn uint64) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	if r.pool == nil {
+		r.pool = make(map[int]uint64)
+	}
+	sn = r.pool[key]
+	sn++
+	r.pool[key] = sn
+	return
+}

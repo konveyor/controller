@@ -2,6 +2,7 @@ package ocp
 
 import (
 	"context"
+	"github.com/go-logr/logr"
 	liberr "github.com/konveyor/controller/pkg/error"
 	libmodel "github.com/konveyor/controller/pkg/inventory/model"
 	"github.com/konveyor/controller/pkg/logging"
@@ -10,6 +11,7 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"path"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -42,7 +44,7 @@ type Reconciler struct {
 	// Credentials secret.
 	secret *core.Secret
 	// Logger.
-	log logging.Logger
+	log logr.Logger
 	// Collections
 	collections []Collection
 	// The k8s manager.
@@ -72,7 +74,11 @@ func New(
 	secret *core.Secret,
 	collections ...Collection) *Reconciler {
 	//
-	log := logging.WithName(cluster.GetName())
+	log := logging.WithName("reconciler|ocp").WithValues(
+		"cluster",
+		path.Join(
+			cluster.GetNamespace(),
+			cluster.GetName()))
 	return &Reconciler{
 		collections: collections,
 		cluster:     cluster,
@@ -151,7 +157,11 @@ func (r *Reconciler) Start() error {
 			default:
 				err := r.start(ctx)
 				if err != nil {
-					r.log.Trace(err, "retry", RetryDelay)
+					r.log.V(3).Error(
+						err,
+						"start failed.",
+						"retry",
+						RetryDelay)
 					time.Sleep(RetryDelay)
 					continue try
 				}
@@ -181,7 +191,7 @@ func (r *Reconciler) start(ctx context.Context) (err error) {
 		}
 	}()
 	mark := time.Now()
-	r.log.Info("Start")
+	r.log.V(3).Info("starting.")
 	err = r.buildManager()
 	if err != nil {
 		return
@@ -197,7 +207,10 @@ func (r *Reconciler) start(ctx context.Context) (err error) {
 	}
 	go r.applyEvents()
 
-	r.log.Info("Started", "duration", time.Since(mark))
+	r.log.V(3).Info(
+		"started.",
+		"duration",
+		time.Since(mark))
 
 	return
 }
@@ -209,12 +222,20 @@ func (r *Reconciler) reconcileCollections(ctx context.Context) (err error) {
 	for _, collection := range r.collections {
 		err = collection.Reconcile(ctx)
 		if err != nil {
-			err = liberr.Wrap(err)
+			err = liberr.Wrap(
+				err,
+				"collection failed.",
+				"object",
+				ref.ToKind(collection.Object()))
 			return
 		}
 	}
 
-	r.log.Info("Initial parity.", "duration", time.Since(mark))
+	r.log.V(3).Info(
+		"initial parity.",
+		"duration",
+		time.Since(mark))
+
 	r.parity = true
 
 	return
@@ -226,7 +247,7 @@ func (r *Reconciler) reconcileCollections(ctx context.Context) (err error) {
 //   2. Close watch event coroutine channel.
 //   3. Cancel the context.
 func (r *Reconciler) Shutdown() {
-	r.log.Info("Shutdown")
+	r.log.V(3).Info("shutdown.")
 	r.terminate()
 	if r.cancel != nil {
 		r.cancel()
@@ -250,7 +271,7 @@ func (r *Reconciler) terminate() {
 func (r *Reconciler) Create(m libmodel.Model) {
 	defer func() {
 		if p := recover(); p != nil {
-			r.log.Info("channel send failed")
+			r.log.V(4).Info("channel send failed.")
 		}
 	}()
 	r.eventChannel <- ModelEvent{}.Create(m)
@@ -263,7 +284,7 @@ func (r *Reconciler) Create(m libmodel.Model) {
 func (r *Reconciler) Update(m libmodel.Model) {
 	defer func() {
 		if p := recover(); p != nil {
-			r.log.Info("channel send failed")
+			r.log.V(4).Info("channel send failed.")
 		}
 	}()
 	r.eventChannel <- ModelEvent{}.Update(m)
@@ -276,7 +297,7 @@ func (r *Reconciler) Update(m libmodel.Model) {
 func (r *Reconciler) Delete(m libmodel.Model) {
 	defer func() {
 		if p := recover(); p != nil {
-			r.log.Info("channel send failed")
+			r.log.V(4).Info("channel send failed.")
 		}
 	}()
 	r.eventChannel <- ModelEvent{}.Delete(m)
@@ -335,12 +356,13 @@ func (r *Reconciler) buildClient() (err error) {
 //
 // Apply model events.
 func (r *Reconciler) applyEvents() {
-	r.log.Info("Apply - started")
-	defer r.log.Info("Apply - ended")
+	r.log.V(3).Info("apply started.")
+	defer r.log.V(3).Info("apply terminated.")
 	for event := range r.eventChannel {
 		err := event.Apply(r)
 		if err != nil {
-			r.log.Trace(err)
+			r.log.V(4).Error(
+				err, "apply event failed.")
 		}
 	}
 }
@@ -373,7 +395,7 @@ func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 	}
 	defer func() {
 		if err != nil {
-			tx.End()
+			_ = tx.End()
 		}
 	}()
 	version := uint64(0)
@@ -383,28 +405,40 @@ func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 	switch r.action {
 	case 0x01: // Create
 		if version > rl.versionThreshold {
-			rl.log.Info("Create", ref.ToKind(r.model), r.model.String())
 			err = tx.Insert(r.model)
 			if err != nil {
 				return
 			}
+			rl.log.V(3).Info(
+				"model created.",
+				ref.ToKind(r.model),
+				r.model.String())
 		}
 	case 0x02: // Update
 		if version > rl.versionThreshold {
-			rl.log.Info("Update", ref.ToKind(r.model), r.model.String())
 			err = tx.Update(r.model)
 			if err != nil {
 				return
 			}
+			rl.log.V(3).Info(
+				"model updated.",
+				ref.ToKind(r.model),
+				r.model.String())
 		}
 	case 0x04: // Delete
-		rl.log.Info("Delete", ref.ToKind(r.model), r.model.String())
 		err = tx.Delete(r.model)
 		if err != nil {
 			return
 		}
+		rl.log.V(3).Info(
+			"model deleted.",
+			ref.ToKind(r.model),
+			r.model.String())
 	default:
-		return liberr.New("unknown action")
+		return liberr.New(
+			"unknown action",
+			"action",
+			r.action)
 	}
 	err = tx.Commit()
 	if err != nil {

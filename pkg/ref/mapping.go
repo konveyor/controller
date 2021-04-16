@@ -30,6 +30,13 @@ func (r *RefMap) Add(owner Owner, target Target) {
 	}
 
 	r.Content[target][owner] = true
+
+	log.V(3).Info(
+		"map: added.",
+		"owner",
+		owner,
+		"target",
+		target)
 }
 
 //
@@ -40,6 +47,10 @@ func (r *RefMap) Delete(owner Owner, target Target) {
 	owners, found := r.Content[target]
 	if found {
 		delete(owners, owner)
+		log.V(3).Info(
+			"map: owner deleted.",
+			"owner",
+			owner)
 	}
 	r.Prune()
 }
@@ -51,6 +62,10 @@ func (r *RefMap) DeleteOwner(owner Owner) {
 	defer r.mutex.Unlock()
 	for _, owners := range r.Content {
 		delete(owners, owner)
+		log.V(3).Info(
+			"map: owner deleted.",
+			"owner",
+			owner)
 	}
 	r.Prune()
 }
@@ -79,6 +94,12 @@ func (r *RefMap) Find(target Target) []Owner {
 			list = append(list, owner)
 		}
 	}
+	log.V(4).Info(
+		"map: found owner for target.",
+		"target",
+		target,
+		"owner",
+		list)
 
 	return list
 }

@@ -1,6 +1,7 @@
 package ref
 
 import (
+	"github.com/konveyor/controller/pkg/logging"
 	"k8s.io/apimachinery/pkg/types"
 	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -13,21 +14,35 @@ import (
 // Example:
 //   err = cnt.Watch(
 //      &source.Kind{
-//         Type: &api.Plan{},
+//         Type: &api.Referenced{},
 //      },
-//      libref.Handler())
-func Handler() handler.EventHandler {
+//      libref.Handler(&api.Owner{}))
+func Handler(owner interface{}) handler.EventHandler {
+	log := logging.WithName("ref|handler")
+	ownerKind := ToKind(owner)
 	return &handler.EnqueueRequestsFromMapFunc{
 		ToRequests: handler.ToRequestsFunc(
 			func(a handler.MapObject) []reconcile.Request {
-				return GetRequests(a)
+				refKind := ToKind(a.Object)
+				list := GetRequests(ownerKind, a)
+				if len(list) > 0 {
+					log.V(4).Info(
+						"handler: request list.",
+						"referenced",
+						refKind,
+						"owner",
+						ownerKind,
+						"list",
+						list)
+				}
+				return list
 			}),
 	}
 }
 
 //
 // Impl the handler interface.
-func GetRequests(a handler.MapObject) []reconcile.Request {
+func GetRequests(kind string, a handler.MapObject) []reconcile.Request {
 	target := Target{
 		Kind:      ToKind(a.Object),
 		Name:      a.Meta.GetName(),
@@ -35,6 +50,9 @@ func GetRequests(a handler.MapObject) []reconcile.Request {
 	}
 	list := []reconcile.Request{}
 	for _, owner := range Map.Find(target) {
+		if owner.Kind != kind {
+			continue
+		}
 		list = append(
 			list,
 			reconcile.Request{

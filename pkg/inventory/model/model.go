@@ -2,9 +2,14 @@ package model
 
 import (
 	"database/sql"
+	"github.com/konveyor/controller/pkg/logging"
 	_ "github.com/mattn/go-sqlite3"
 	"reflect"
 )
+
+//
+// Package logger.
+var log = logging.WithName("model")
 
 //
 // Errors.

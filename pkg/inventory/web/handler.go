@@ -1,11 +1,15 @@
 package web
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/go-logr/logr"
 	"github.com/gorilla/websocket"
 	liberr "github.com/konveyor/controller/pkg/error"
 	"github.com/konveyor/controller/pkg/inventory/container"
 	"github.com/konveyor/controller/pkg/inventory/model"
+	"github.com/konveyor/controller/pkg/logging"
+	"github.com/konveyor/controller/pkg/ref"
 	"net/http"
 	"strconv"
 	"time"
@@ -78,7 +82,7 @@ type Parity struct {
 //
 // Ensure reconciler has achieved parity.
 func (c *Parity) EnsureParity(r container.Reconciler, w time.Duration) int {
-	wait := time.Second * 30
+	wait := w
 	poll := time.Microsecond * 100
 	for {
 		mark := time.Now()
@@ -103,12 +107,45 @@ type ResourceBuilder func(model.Model) interface{}
 //
 // Event
 type Event struct {
+	// ID
+	ID uint64
 	// Action.
 	Action uint8
 	// Affected Resource.
 	Resource interface{}
 	// Updated resource.
 	Updated interface{}
+}
+
+//
+// String representation.
+func (r *Event) String() string {
+	action := "unknown"
+	switch r.Action {
+	case model.Started:
+		action = "started"
+	case model.Parity:
+		action = "parity"
+	case model.Error:
+		action = "error"
+	case model.End:
+		action = "end"
+	case model.Created:
+		action = "created"
+	case model.Updated:
+		action = "updated"
+	case model.Deleted:
+		action = "deleted"
+	}
+	kind := ""
+	if r.Resource != nil {
+		kind = ref.ToKind(r.Resource)
+	}
+	return fmt.Sprintf(
+		"event-%.4d: %s kind=%s",
+		r.ID,
+		action,
+		kind)
 }
 
 //
@@ -120,6 +157,8 @@ type WatchWriter struct {
 	watch *model.Watch
 	// Resource.
 	builder ResourceBuilder
+	// Logger.
+	log logr.Logger
 }
 
 //
@@ -127,12 +166,14 @@ type WatchWriter struct {
 func (r *WatchWriter) end() {
 	_ = r.webSocket.Close()
 	r.watch.End()
+	r.log.V(3).Info("watch ended.")
 }
 
 //
 // Write event to the socket.
 func (r *WatchWriter) send(e model.Event) {
 	event := Event{
+		ID:     e.ID,
 		Action: e.Action,
 	}
 	if e.Model != nil {
@@ -143,49 +184,87 @@ func (r *WatchWriter) send(e model.Event) {
 	}
 	err := r.webSocket.WriteJSON(event)
 	if err != nil {
+		r.log.V(4).Error(err, "websocket send failed.")
 		r.end()
 	}
+
+	r.log.V(5).Info(
+		"event sent.",
+		"event",
+		event)
 }
 
 //
 // Watch has started.
-func (r *WatchWriter) Started() {
+func (r *WatchWriter) Started(watchID uint64) {
+	r.log.V(4).Info(
+		"event: started.",
+		"watch",
+		watchID)
+	r.send(model.Event{
+		ID:     watchID, // send watch ID.
+		Action: model.Started,
+	})
 }
 
 //
 // Watch has parity.
 func (r *WatchWriter) Parity() {
-	r.send(model.Event{Action: model.Parity})
+	r.log.V(4).Info("event: parity.")
+	r.send(model.Event{
+		Action: model.Parity,
+	})
 }
 
 //
 // A model has been created.
 func (r *WatchWriter) Created(event model.Event) {
+	r.log.V(5).Info(
+		"event received.",
+		"event",
+		event.String())
 	r.send(event)
 }
 
 //
 // A model has been updated.
 func (r *WatchWriter) Updated(event model.Event) {
+	r.log.V(5).Info(
+		"event received.",
+		"event",
+		event.String())
 	r.send(event)
 }
 
 //
 // A model has been deleted.
 func (r *WatchWriter) Deleted(event model.Event) {
+	r.log.V(5).Info(
+		"event received.",
+		"event",
+		event.String())
 	r.send(event)
 }
 
 //
 // An error has occurred delivering an event.
 func (r *WatchWriter) Error(err error) {
-	r.send(model.Event{Action: model.Error})
+	r.log.V(4).Info(
+		"event: error",
+		"error",
+		err.Error())
+	r.send(model.Event{
+		Action: model.Error,
+	})
 }
 
 //
 // An event watch has ended.
 func (r *WatchWriter) End() {
-	r.send(model.Event{Action: model.End})
+	r.log.V(4).Info("event: ended.")
+	r.send(model.Event{
+		Action: model.End,
+	})
 }
 
 //
@@ -214,14 +293,36 @@ func (r *Watched) Watch(
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 	}
-	writer := &WatchWriter{builder: rb}
 	socket, err := upGrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
-		err = liberr.Wrap(err)
+		err = liberr.Wrap(
+			err,
+			"websocket upgrade failed.",
+			"url",
+			ctx.Request.URL)
 		return
 	}
-	writer.webSocket = socket
+	wlog := logging.WithName("web|watch|writer").WithValues(
+		"peer",
+		socket.RemoteAddr(),
+		"model",
+		ref.ToKind(m))
+	writer := &WatchWriter{
+		webSocket: socket,
+		builder:   rb,
+		log:       wlog,
+	}
 	writer.watch, err = db.Watch(m, writer)
+	if err != nil {
+		_ = socket.Close()
+		return
+	}
+
+	log.V(3).Info(
+		"handler: watch created.",
+		"url",
+		ctx.Request.URL)
+
 	return
 }
 

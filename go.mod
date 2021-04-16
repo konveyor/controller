@@ -8,7 +8,7 @@ require (
 	github.com/gin-contrib/cors v1.3.1
 	github.com/gin-gonic/gin v1.6.3
 	github.com/go-logr/logr v0.3.0
-	github.com/go-logr/zapr v0.3.0 // indirect
+	github.com/go-logr/zapr v0.3.0
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/google/go-cmp v0.5.2 // indirect
 	github.com/google/gofuzz v1.1.0 // indirect
@@ -27,6 +27,7 @@ require (
 	github.com/prometheus/client_golang v1.1.0 // indirect
 	github.com/stretchr/testify v1.6.1 // indirect
 	go.uber.org/atomic v1.4.0 // indirect
+	go.uber.org/zap v1.10.0
 	golang.org/x/crypto v0.0.0-20201002170205-7f63de1d35b0 // indirect
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43 // indirect
 	golang.org/x/sys v0.0.0-20200909081042-eff7692f9009 // indirect

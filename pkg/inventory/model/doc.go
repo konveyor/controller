@@ -105,11 +105,24 @@
 //
 package model
 
+import "github.com/konveyor/controller/pkg/logging"
+
 //
 // New database.
 func New(path string, models ...interface{}) DB {
-	return &Client{
+	client := &Client{
 		path:   path,
 		models: models,
 	}
+	client.log = logging.WithName("model|db").WithValues(
+		"path",
+		path)
+	client.journal.log = logging.WithName("db|journal").WithValues(
+		"db",
+		path)
+	client.labeler.log = logging.WithName("db|labeler").WithValues(
+		"db",
+		path)
+
+	return client
 }

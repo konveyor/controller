@@ -307,6 +307,7 @@ func TestHandler(t *testing.T) {
 		})
 
 	list := GetRequests(
+		ToKind(&_Thing{}),
 		handler.MapObject{
 			Meta:   target,
 			Object: target,

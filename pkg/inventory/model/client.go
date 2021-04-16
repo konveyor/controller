@@ -3,8 +3,10 @@ package model
 import (
 	"database/sql"
 	"errors"
+	"github.com/go-logr/logr"
 	liberr "github.com/konveyor/controller/pkg/error"
 	fb "github.com/konveyor/controller/pkg/filebacked"
+	"github.com/konveyor/controller/pkg/logging"
 	"os"
 	"sync"
 )
@@ -57,6 +59,8 @@ type Client struct {
 	db *sql.DB
 	// Journal
 	journal Journal
+	// Logger
+	log logr.Logger
 }
 
 //
@@ -65,10 +69,11 @@ type Client struct {
 // Optionally `purge` (delete) the DB first.
 func (r *Client) Open(purge bool) error {
 	if purge {
-		os.Remove(r.path)
+		_ = os.Remove(r.path)
 	}
 	db, err := sql.Open("sqlite3", r.path)
 	if err != nil {
+		r.log.V(3).Error(err, "open, failed.")
 		panic(err)
 	}
 	statements := []string{Pragma}
@@ -83,10 +88,20 @@ func (r *Client) Open(purge bool) error {
 	for _, ddl := range statements {
 		_, err = db.Exec(ddl)
 		if err != nil {
-			db.Close()
-			return liberr.Wrap(err)
+			_ = db.Close()
+			return liberr.Wrap(
+				err,
+				"DDL failed.",
+				"ddl",
+				ddl)
 		}
+		r.log.V(4).Info(
+			"DDL executed.",
+			"ddl",
+			ddl)
 	}
+
+	r.log.V(3).Info("DB opened.")
 
 	r.db = db
 
@@ -104,43 +119,81 @@ func (r *Client) Close(purge bool) error {
 	}
 	err := r.db.Close()
 	if err != nil {
-		return liberr.Wrap(err)
+		return liberr.Wrap(
+			err,
+			"DB close failed.",
+			"path",
+			r.path)
 	}
 	r.db = nil
 	if purge {
 		_ = os.Remove(r.path)
+		r.log.V(3).Info("DB deleted.")
 	}
 	err = r.journal.Close()
 	if err != nil {
-		return liberr.Wrap(err)
+		return err
 	}
+
+	r.log.V(3).Info("DB closed.")
 
 	return nil
 }
 
 //
 // Get the model.
-func (r *Client) Get(model Model) error {
-	return Table{r.db}.Get(model)
+func (r *Client) Get(model Model) (err error) {
+	err = Table{r.db}.Get(model)
+	if err == nil {
+		r.log.V(4).Info(
+			"get",
+			"model",
+			model.String())
+	}
+
+	return
 }
 
 //
 // List models.
 // The `list` must be: *[]Model.
-func (r *Client) List(list interface{}, options ListOptions) error {
-	return Table{r.db}.List(list, options)
+func (r *Client) List(list interface{}, options ListOptions) (err error) {
+	err = Table{r.db}.List(list, options)
+	if err == nil {
+		r.log.V(4).Info(
+			"list",
+			"options",
+			options)
+	}
+
+	return
 }
 
 //
 // List models.
-func (r *Client) Iter(model interface{}, options ListOptions) (fb.Iterator, error) {
-	return Table{r.db}.Iter(model, options)
+func (r *Client) Iter(model interface{}, options ListOptions) (itr fb.Iterator, err error) {
+	itr, err = Table{r.db}.Iter(model, options)
+	if err == nil {
+		r.log.V(4).Info(
+			"iter",
+			"options",
+			options)
+	}
+
+	return
 }
 
 //
 // Count models.
-func (r *Client) Count(model Model, predicate Predicate) (int64, error) {
-	return Table{r.db}.Count(model, predicate)
+func (r *Client) Count(model Model, predicate Predicate) (n int64, err error) {
+	n, err = Table{r.db}.Count(model, predicate)
+	if err == nil {
+		r.log.V(4).Info(
+			"count",
+			"predicate",
+			predicate)
+	}
+	return
 }
 
 //
@@ -155,13 +208,24 @@ func (r *Client) Begin() (*Tx, error) {
 	r.dbMutex.Lock()
 	real, err := r.db.Begin()
 	if err != nil {
-		return nil, liberr.Wrap(err)
+		return nil, liberr.Wrap(
+			err,
+			"db",
+			r.path)
 	}
+	log := logging.WithName("model|db|tx").WithValues(
+		"db",
+		r.path,
+		"tx",
+		real)
 	tx := &Tx{
 		dbMutex: &r.dbMutex,
 		journal: &r.journal,
+		log:     log,
 		real:    real,
 	}
+
+	r.log.V(4).Info("tx begin.")
 
 	return tx, nil
 }
@@ -184,6 +248,11 @@ func (r *Client) Insert(model Model) error {
 	if err != nil {
 		return err
 	}
+
+	r.log.V(4).Info(
+		"model inserted.",
+		"model",
+		model.String())
 
 	return nil
 }
@@ -215,6 +284,11 @@ func (r *Client) Update(model Model) error {
 		return err
 	}
 
+	r.log.V(4).Info(
+		"model updated.",
+		"model",
+		model.String())
+
 	return nil
 }
 
@@ -245,6 +319,11 @@ func (r *Client) Delete(model Model) error {
 	if err != nil {
 		return err
 	}
+
+	r.log.V(4).Info(
+		"model deleted.",
+		"model",
+		model.String())
 
 	return nil
 }
@@ -294,6 +373,13 @@ func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) 
 	w.notify(list.Iter())
 	w.Start()
 
+	r.log.V(4).Info(
+		"watch started.",
+		"model",
+		model.String(),
+		"count",
+		itr.Len())
+
 	return
 }
 
@@ -301,6 +387,10 @@ func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) 
 // End watch.
 func (r *Client) EndWatch(watch *Watch) {
 	r.journal.End(watch)
+	r.log.V(4).Info(
+		"watch ended.",
+		"model",
+		watch.Model.String())
 }
 
 //
@@ -311,6 +401,8 @@ type Tx struct {
 	dbMutex *sync.Mutex
 	// Journal
 	journal *Journal
+	// Logger.
+	log logr.Logger
 	// Reference to real sql.Tx.
 	real *sql.Tx
 	// Ended
@@ -319,21 +411,45 @@ type Tx struct {
 
 //
 // Get the model.
-func (r *Tx) Get(model Model) error {
-	return Table{r.real}.Get(model)
+func (r *Tx) Get(model Model) (err error) {
+	err = Table{r.real}.Get(model)
+	if err == nil {
+		r.log.V(4).Info(
+			"get",
+			"model",
+			model.String())
+	}
+
+	return
 }
 
 //
 // List models.
 // The `list` must be: *[]Model.
-func (r *Tx) List(list interface{}, options ListOptions) error {
-	return Table{r.real}.List(list, options)
+func (r *Tx) List(list interface{}, options ListOptions) (err error) {
+	err = Table{r.real}.List(list, options)
+	if err == nil {
+		r.log.V(4).Info(
+			"list",
+			"options",
+			options)
+	}
+
+	return
 }
 
 //
 // Count models.
-func (r *Tx) Count(model Model, predicate Predicate) (int64, error) {
-	return Table{r.real}.Count(model, predicate)
+func (r *Tx) Count(model Model, predicate Predicate) (n int64, err error) {
+	n, err = Table{r.real}.Count(model, predicate)
+	if err == nil {
+		r.log.V(4).Info(
+			"count",
+			"predicate",
+			predicate)
+	}
+
+	return
 }
 
 //
@@ -352,6 +468,11 @@ func (r *Tx) Insert(model Model) error {
 	if err != nil {
 		return err
 	}
+
+	r.log.V(4).Info(
+		"model inserted.",
+		"model",
+		model.String())
 
 	return nil
 }
@@ -384,6 +505,11 @@ func (r *Tx) Update(model Model) error {
 		return err
 	}
 
+	r.log.V(4).Info(
+		"model updated.",
+		"model",
+		model.String())
+
 	return nil
 }
 
@@ -413,6 +539,11 @@ func (r *Tx) Delete(model Model) error {
 		return err
 	}
 
+	r.log.V(4).Info(
+		"model deleted.",
+		"model",
+		model.String())
+
 	return nil
 }
 
@@ -435,6 +566,8 @@ func (r *Tx) Commit() (err error) {
 	}
 
 	r.journal.Committed()
+
+	r.log.V(4).Info("tx committed.")
 
 	return
 }
@@ -459,21 +592,26 @@ func (r *Tx) End() (err error) {
 
 	r.journal.Reset()
 
+	r.log.V(4).Info("tx ended.")
+
 	return
 }
 
 //
 // Labeler.
 type Labeler struct {
+	// Logger.
+	log logr.Logger
 }
 
 //
 // Insert labels for the model into the DB.
 func (r *Labeler) Insert(table Table, model Model) error {
+	kind := table.Name(model)
 	for l, v := range model.Labels() {
 		label := &Label{
 			Parent: model.Pk(),
-			Kind:   table.Name(model),
+			Kind:   kind,
 			Name:   l,
 			Value:  v,
 		}
@@ -481,6 +619,16 @@ func (r *Labeler) Insert(table Table, model Model) error {
 		if err != nil {
 			return err
 		}
+		r.log.V(2).Info(
+			"label inserted.",
+			"model",
+			model.String(),
+			"kind",
+			kind,
+			"label",
+			l,
+			"value",
+			v)
 	}
 
 	return nil
@@ -505,6 +653,16 @@ func (r *Labeler) Delete(table Table, model Model) error {
 		if err != nil {
 			return err
 		}
+		r.log.V(2).Info(
+			"label inserted.",
+			"model",
+			model.String(),
+			"kind",
+			label.Kind,
+			"label",
+			label.Name,
+			"value",
+			label.Value)
 	}
 
 	return nil

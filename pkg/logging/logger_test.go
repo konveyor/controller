@@ -14,7 +14,24 @@ type entry struct {
 	err     error
 }
 
+type fakeBuilder struct {
+}
+
+func (b *fakeBuilder) New() logr.Logger {
+	return &fake{
+		entry: []entry{},
+	}
+}
+
+func (b *fakeBuilder) V(level int, f logr.Logger) logr.Logger {
+	return &fake{
+		debug: Settings.atDebug(level),
+		entry: []entry{},
+	}
+}
+
 type fake struct {
+	debug  bool
 	entry  []entry
 	values []interface{}
 	name   string
@@ -44,7 +61,9 @@ func (l *fake) Enabled() bool {
 }
 
 func (l *fake) V(level int) logr.InfoLogger {
-	return nil
+	return &fake{
+		entry: []entry{},
+	}
 }
 
 func (l *fake) WithName(name string) logr.Logger {
@@ -56,10 +75,10 @@ func (l *fake) WithName(name string) logr.Logger {
 // Get logger with values.
 func (l *fake) WithValues(kvpair ...interface{}) logr.Logger {
 	l.values = kvpair
-	return nil
+	return l
 }
 
-func TestLogger(t *testing.T) {
+func TestReal(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	//
 	// Real
@@ -68,24 +87,16 @@ func TestLogger(t *testing.T) {
 	log.Error(errors.New("A"), "thing failed")
 	log.Trace(errors.New("B"))
 	g.Expect(log.name).To(gomega.Equal("Test"))
-	log.Reset()
-	//
-	// Fake.
-	NameGenerator = func(name string) string {
-		return name + "1234"
-	}
-	Factory = func(name string) logr.Logger {
-		return &fake{
-			entry: []entry{},
-			name:  name,
-		}
-	}
-	log = WithName("Test")
+}
+
+func TestFake(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	Factory = &fakeBuilder{}
+
+	log := WithName("Test")
 	f := log.Real.(*fake)
 	g.Expect(f.name).To(gomega.Equal("Test"))
-	log.Reset()
-	f = log.Real.(*fake)
-	g.Expect(f.name).To(gomega.Equal("Test|1234"))
 	// Info
 	log.Info("hello")
 	g.Expect(len(f.entry)).To(gomega.Equal(1))
@@ -135,4 +146,61 @@ func TestLogger(t *testing.T) {
 	g.Expect(f.entry[5].kvpair[7]).To(gomega.Equal("B"))
 	g.Expect(f.entry[5].kvpair[8]).To(gomega.Equal(Error))
 	g.Expect(f.entry[5].kvpair[10]).To(gomega.Equal(Stack))
+
+	// Levels.
+	// level-1
+	Settings.Level = 0
+	log = WithName("level-testing")
+	log0 := log.V(0)
+	g.Expect(log0.(*Logger).Real.(*fake).debug).To(gomega.BeFalse())
+	log0.Info("Test-0")
+	g.Expect(len(log0.(*Logger).Real.(*fake).entry)).To(gomega.Equal(1))
+	log1 := log.V(1)
+	log1.Info("Test-1")
+	g.Expect(len(log1.(*Logger).Real.(*fake).entry)).To(gomega.Equal(0))
+	// level-4
+	Settings.Level = Settings.DebugThreshold
+	log = WithName("level-testing")
+	log0 = log.V(2)
+	g.Expect(log0.(*Logger).Real.(*fake).debug).To(gomega.BeFalse())
+	log0.Info("Test-0")
+	g.Expect(len(log0.(*Logger).Real.(*fake).entry)).To(gomega.Equal(1))
+	log1 = log.V(Settings.DebugThreshold)
+	log1.Info("Test-1")
+	g.Expect(len(log1.(*Logger).Real.(*fake).entry)).To(gomega.Equal(1))
+	log2 := log1.V(Settings.DebugThreshold + 1)
+	g.Expect(log2.(*Logger).Real.(*fake).debug).To(gomega.BeTrue())
+	log2.Info("Test-2")
+	g.Expect(len(log2.(*Logger).Real.(*fake).entry)).To(gomega.Equal(0))
+
+	// level-1
+	err := liberr.New("")
+	Settings.Level = 0
+	log = WithName("level-testing")
+	log0 = log.V(0)
+	g.Expect(log0.(*Logger).Real.(*fake).debug).To(gomega.BeFalse())
+	log0.Error(err, "Test-0")
+	g.Expect(len(log0.(*Logger).Real.(*fake).entry)).To(gomega.Equal(1))
+	log1 = log.V(1)
+	log1.Error(err, "Test-1")
+	g.Expect(len(log1.(*Logger).Real.(*fake).entry)).To(gomega.Equal(0))
+	// level-4
+	Settings.Level = Settings.DebugThreshold
+	log = WithName("level-testing")
+	log0 = log.V(2)
+	g.Expect(log0.(*Logger).Real.(*fake).debug).To(gomega.BeFalse())
+	log0.Error(err, "Test-0")
+	g.Expect(len(log0.(*Logger).Real.(*fake).entry)).To(gomega.Equal(1))
+	log1 = log.V(Settings.DebugThreshold)
+	log1.Error(err, "Test-1")
+	g.Expect(len(log1.(*Logger).Real.(*fake).entry)).To(gomega.Equal(1))
+	log2 = log1.V(Settings.DebugThreshold + 1)
+	g.Expect(log2.(*Logger).Real.(*fake).debug).To(gomega.BeTrue())
+	log2.Error(err, "Test-2")
+	g.Expect(len(log2.(*Logger).Real.(*fake).entry)).To(gomega.Equal(0))
+
+	// Test level preserved.
+	log3 := log.V(3).WithName("another").WithValues("A", 1)
+	g.Expect(log3.(*Logger).name).To(gomega.Equal("another"))
+	g.Expect(log3.(*Logger).level).To(gomega.Equal(log3.(*Logger).level))
 }

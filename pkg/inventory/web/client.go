@@ -3,9 +3,12 @@ package web
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/go-logr/logr"
 	"github.com/gorilla/websocket"
 	liberr "github.com/konveyor/controller/pkg/error"
 	libmodel "github.com/konveyor/controller/pkg/inventory/model"
+	"github.com/konveyor/controller/pkg/logging"
+	"github.com/konveyor/controller/pkg/ref"
 	"io/ioutil"
 	"net/http"
 	liburl "net/url"
@@ -89,7 +92,11 @@ type Client struct {
 func (r *Client) Get(url string, out interface{}) (status int, err error) {
 	parsedURL, err := liburl.Parse(url)
 	if err != nil {
-		err = liberr.Wrap(err)
+		err = liberr.Wrap(
+			err,
+			"URL not valid.",
+			"url",
+			url)
 		return
 	}
 	request := &http.Request{
@@ -100,7 +107,11 @@ func (r *Client) Get(url string, out interface{}) (status int, err error) {
 	client := http.Client{Transport: r.Transport}
 	response, err := client.Do(request)
 	if err != nil {
-		err = liberr.Wrap(err)
+		err = liberr.Wrap(
+			err,
+			"GET failed.",
+			"url",
+			url)
 		return
 	}
 	status = response.StatusCode
@@ -111,12 +122,20 @@ func (r *Client) Get(url string, out interface{}) (status int, err error) {
 		}()
 		content, err = ioutil.ReadAll(response.Body)
 		if err != nil {
-			err = liberr.Wrap(err)
+			err = liberr.Wrap(
+				err,
+				"Read body failed.",
+				"url",
+				url)
 			return
 		}
 		err = json.Unmarshal(content, out)
 		if err != nil {
-			err = liberr.Wrap(err)
+			err = liberr.Wrap(
+				err,
+				"json unmarshal failed.",
+				"url",
+				url)
 			return
 		}
 	}
@@ -129,7 +148,11 @@ func (r *Client) Get(url string, out interface{}) (status int, err error) {
 func (r *Client) Post(url string, in interface{}, out interface{}) (status int, err error) {
 	parsedURL, err := liburl.Parse(url)
 	if err != nil {
-		err = liberr.Wrap(err)
+		err = liberr.Wrap(
+			err,
+			"URL not valid.",
+			"url",
+			url)
 		return
 	}
 	body, _ := json.Marshal(in)
@@ -143,7 +166,11 @@ func (r *Client) Post(url string, in interface{}, out interface{}) (status int, 
 	client := http.Client{Transport: r.Transport}
 	response, err := client.Do(request)
 	if err != nil {
-		err = liberr.Wrap(err)
+		err = liberr.Wrap(
+			err,
+			"POST failed.",
+			"url",
+			url)
 		return
 	}
 	status = response.StatusCode
@@ -157,12 +184,20 @@ func (r *Client) Post(url string, in interface{}, out interface{}) (status int, 
 		}
 		content, err = ioutil.ReadAll(response.Body)
 		if err != nil {
-			err = liberr.Wrap(err)
+			err = liberr.Wrap(
+				err,
+				"Read body failed.",
+				"url",
+				url)
 			return
 		}
 		err = json.Unmarshal(content, out)
 		if err != nil {
-			err = liberr.Wrap(err)
+			err = liberr.Wrap(
+				err,
+				"json unmarshal failed.",
+				"url",
+				url)
 			return
 		}
 	}
@@ -194,7 +229,11 @@ func (r *Client) Watch(
 	post := func(w *WatchReader) (pStatus int, pErr error) {
 		socket, response, pErr := dialer.Dial(url, header)
 		if pErr != nil {
-			pErr = liberr.Wrap(pErr)
+			pErr = liberr.Wrap(
+				pErr,
+				"open websocket failed.",
+				"url",
+				url)
 			return
 		}
 		pStatus = response.StatusCode
@@ -206,18 +245,32 @@ func (r *Client) Watch(
 		}
 		return
 	}
+	rlog := logging.WithName("web|watch|reader")
 	reader := &WatchReader{
 		resource: resource,
 		handler:  handler,
 		repair:   post,
+		log:      rlog,
 	}
 	status, err = post(reader)
 	if err != nil || status != http.StatusOK {
 		return
 	}
+	reader.log = reader.log.WithValues(
+		"local",
+		reader.webSocket.LocalAddr(),
+		"resource",
+		ref.ToKind(resource))
 
 	w = &Watch{reader: reader}
 	reader.start()
+
+	log.V(3).Info(
+		"client: watch created.",
+		"local",
+		reader.webSocket.LocalAddr(),
+		"remote",
+		reader.webSocket.RemoteAddr())
 
 	return
 }
@@ -247,6 +300,8 @@ func (r *Client) patchURL(in string) (out string) {
 //
 // Watch (event) reader.
 type WatchReader struct {
+	// Watch ID.
+	id uint64
 	// Repair function.
 	repair func(*WatchReader) (int, error)
 	// Web socket.
@@ -255,6 +310,8 @@ type WatchReader struct {
 	resource interface{}
 	// Event handler.
 	handler EventHandler
+	// Logger.
+	log logr.Logger
 	// Started.
 	started bool
 	// Done.
@@ -266,11 +323,13 @@ type WatchReader struct {
 func (r *WatchReader) Terminate() {
 	r.done = true
 	_ = r.webSocket.Close()
+	r.log.V(3).Info("reader terminated.")
 }
 
 //
 // Repair.
 func (r *WatchReader) Repair() (status int, err error) {
+	r.log.V(3).Info("repair websocket.")
 	return r.repair(r)
 }
 
@@ -288,7 +347,9 @@ func (r *WatchReader) start() {
 			r.started = false
 			r.done = true
 			r.handler.End()
+			r.log.V(3).Info("reader stopped.")
 		}()
+		r.log.V(3).Info("reader started.")
 		r.handler.Started()
 		for {
 			event := Event{
@@ -303,7 +364,20 @@ func (r *WatchReader) start() {
 				time.Sleep(time.Second * 3)
 				r.handler.Error(&Watch{reader: r}, err)
 			}
+			r.log.V(5).Info(
+				"event: received.",
+				"event",
+				event.String())
 			switch event.Action {
+			case libmodel.Started:
+				r.id = event.ID
+				r.log = r.log.WithValues(
+					"watch",
+					r.id)
+				r.log.V(3).Info(
+					"updated with peer watch ID.",
+					"event",
+					event.String())
 			case libmodel.Parity:
 				r.handler.Parity()
 			case libmodel.Error:
