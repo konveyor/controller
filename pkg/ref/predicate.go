@@ -133,7 +133,7 @@ func (r *EventMapper) findRefs(object interface{}) []Target {
 			add(kind)
 			continue
 		}
-		if fv.Kind() == reflect.Struct {
+		if fv.Kind() == reflect.Struct && fv.CanInterface() {
 			nested := r.findRefs(fv.Interface())
 			list = append(list, nested...)
 		}
