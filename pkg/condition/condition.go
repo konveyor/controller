@@ -1,10 +1,7 @@
 package condition
 
 import (
-	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
 	"reflect"
 	"time"
 )
@@ -53,13 +50,13 @@ type Condition struct {
 	Durable bool `json:"durable,omitempty"`
 	// A list of items referenced in the `Message`.
 	Items []string `json:"items,omitempty"`
-	// A condition has been explicitly set/updated.
+	// The condition has been explicitly set/updated.
 	staged bool `json:"-"`
 }
 
 //
 // Update this condition with another's fields.
-func (r *Condition) Update(other Condition) {
+func (r *Condition) Update(other Condition) (updated bool) {
 	r.staged = true
 	if r.Equal(other) {
 		return
@@ -72,6 +69,8 @@ func (r *Condition) Update(other Condition) {
 	r.Durable = other.Durable
 	r.Items = other.Items
 	r.LastTransitionTime = v1.NewTime(time.Now())
+	updated = true
+	return
 }
 
 //
@@ -89,9 +88,6 @@ func (r *Condition) Equal(other Condition) bool {
 //
 // Managed collection of conditions.
 // Intended to be included in resource Status.
-// List - The list of conditions.
-// staging - In `staging` mode, the search methods like
-//          HasCondition() filter out un-staging conditions.
 // -------------------
 // Example:
 //
@@ -105,8 +101,12 @@ func (r *Condition) Equal(other Condition) bool {
 //     "Resource Ready.")
 //
 type Conditions struct {
-	List    []Condition `json:"conditions,omitempty"`
-	staging bool        `json:"-"`
+	// List of conditions.
+	List []Condition `json:"conditions,omitempty"`
+	// Staging conditions.
+	staging bool `json:"-"`
+	// Explain report.
+	explain Explain `json:"-"`
 }
 
 //
@@ -134,6 +134,9 @@ func (r *Conditions) EndStagingConditions() {
 		condition := r.List[index]
 		if condition.staged {
 			kept = append(kept, condition)
+			continue
+		} else {
+			r.explain.deleted(condition)
 		}
 	}
 	r.List = kept
@@ -183,10 +186,13 @@ func (r *Conditions) SetCondition(conditions ...Condition) {
 		condition.staged = true
 		found := r.find(condition.Type)
 		if found == nil {
+			r.explain.added(condition)
 			condition.LastTransitionTime = v1.NewTime(time.Now())
 			r.List = append(r.List, condition)
 		} else {
-			found.Update(condition)
+			if found.Update(condition) {
+				r.explain.updated(condition)
+			}
 		}
 	}
 }
@@ -233,6 +239,7 @@ func (r *Conditions) DeleteCondition(types ...string) {
 			kept = append(kept, condition)
 			continue
 		}
+		r.explain.deleted(condition)
 		if r.staging {
 			condition.staged = false
 			kept = append(kept, condition)
@@ -299,26 +306,6 @@ func (r *Conditions) HasConditionCategory(names ...string) bool {
 }
 
 //
-// Record conditions as events.
-func (r *Conditions) RecordEvents(object runtime.Object, recorder record.EventRecorder) {
-	for _, cnd := range r.List {
-		if cnd.Status != True || !cnd.staged {
-			continue
-		}
-		eventType := ""
-		switch cnd.Category {
-		case Critical,
-			Error,
-			Warn:
-			eventType = core.EventTypeWarning
-		default:
-			eventType = core.EventTypeNormal
-		}
-		recorder.Event(object, eventType, cnd.Type, cnd.Message)
-	}
-}
-
-//
 // The collection contains a `Critical` error condition.
 // Resource reconcile() should not continue.
 func (r *Conditions) HasCriticalCondition(category ...string) bool {
@@ -352,4 +339,76 @@ func (r *Conditions) IsReady() bool {
 	}
 
 	return true
+}
+
+//
+// Get Explain report.
+func (r *Conditions) Explain() Explain {
+	r.explain.build()
+	return r.explain
+}
+
+//
+// Explain report.
+type Explain struct {
+	// conditions added.
+	Added map[string]Condition
+	// conditions updated.
+	Updated map[string]Condition
+	// conditions deleted
+	Deleted map[string]Condition
+}
+
+//
+// Total number of changes.
+func (r *Explain) Len() int {
+	r.build()
+	return len(r.Updated) + len(r.Updated) + len(r.Deleted)
+}
+
+//
+// The delta is empty.
+func (r *Explain) Empty() bool {
+	r.build()
+	return r.Len() == 0
+}
+
+//
+// Ensure the collections are built.
+// Support lazy construction.
+func (r *Explain) build() {
+	if r.Added == nil {
+		r.Added = make(map[string]Condition)
+		r.Updated = make(map[string]Condition)
+		r.Deleted = make(map[string]Condition)
+	}
+}
+
+//
+// Condition added.
+func (r *Explain) added(cnd Condition) {
+	r.build()
+	r.Added[cnd.Type] = cnd
+	delete(r.Updated, cnd.Type)
+	delete(r.Deleted, cnd.Type)
+}
+
+//
+// Condition updated.
+func (r *Explain) updated(cnd Condition) {
+	r.build()
+	if _, found := r.Added[cnd.Type]; found {
+		return
+	}
+	r.Updated[cnd.Type] = cnd
+	delete(r.Deleted, cnd.Type)
+}
+
+//
+// Condition deleted.
+func (r *Explain) deleted(cnd Condition) {
+	r.build()
+	r.Deleted[cnd.Type] = cnd
+	delete(r.Added, cnd.Type)
+	delete(r.Updated, cnd.Type)
 }
