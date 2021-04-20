@@ -26,7 +26,7 @@ const (
 // Event handler
 type EventHandler interface {
 	// The watch has started.
-	Started()
+	Started(uint64)
 	// Parity marker.
 	// The watch has delivered the initial set
 	// of `Created` events.
@@ -52,7 +52,7 @@ type StockEventHandler struct{}
 
 //
 // Watch has started.
-func (r *StockEventHandler) Started() {}
+func (r *StockEventHandler) Started(uint64) {}
 
 //
 // Watch has parity.
@@ -350,7 +350,6 @@ func (r *WatchReader) start() {
 			r.log.V(3).Info("reader stopped.")
 		}()
 		r.log.V(3).Info("reader started.")
-		r.handler.Started()
 		for {
 			event := Event{
 				Resource: r.clone(r.resource),
@@ -371,6 +370,7 @@ func (r *WatchReader) start() {
 			switch event.Action {
 			case libmodel.Started:
 				r.id = event.ID
+				r.handler.Started(r.id)
 				r.log = r.log.WithValues(
 					"watch",
 					r.id)
@@ -414,6 +414,12 @@ func (r *WatchReader) clone(in interface{}) (out interface{}) {
 // Represents a watch.
 type Watch struct {
 	reader *WatchReader
+}
+
+//
+// ID.
+func (r *Watch) ID() uint64 {
+	return r.reader.id
 }
 
 //
