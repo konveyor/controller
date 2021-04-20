@@ -2,7 +2,7 @@
 // relational model (ORM) based on sqlite3 intended to support the
 // needs of the `container` package.
 // Each entity (table) is modeled by a struct.  Each field (column)
-// is described using tags:
+// is Described using tags:
 //   `sql:"pk"`
 //       The primary key.
 //   `sql:"key"`

@@ -372,6 +372,11 @@ func (t Table) Get(model interface{}) error {
 		err = liberr.Wrap(err, "sql", stmt)
 	}
 
+	log.V(5).Info(
+		"table: get succeeded.",
+		"sql",
+		stmt)
+
 	return err
 }
 
@@ -428,7 +433,7 @@ func (t Table) List(list interface{}, options ListOptions) error {
 	lv.Set(mList)
 
 	log.V(5).Info(
-		"table: model listed.",
+		"table: list succeeded.",
 		"sql",
 		stmt)
 
@@ -479,7 +484,7 @@ func (t Table) Iter(model interface{}, options ListOptions) (itr fb.Iterator, er
 	itr = list.Iter()
 
 	log.V(5).Info(
-		"table: model (iter) listed.",
+		"table: list (iter) succeeded.",
 		"sql",
 		stmt)
 
@@ -510,7 +515,7 @@ func (t Table) Count(model interface{}, predicate Predicate) (int64, error) {
 	}
 
 	log.V(5).Info(
-		"table: model counted.",
+		"table: count succeeded.",
 		"sql",
 		stmt)
 

@@ -68,11 +68,10 @@ func (b *ZapBuilder) New() (l logr.Logger) {
 //
 // Debug logger.
 func (b *ZapBuilder) V(level int, in logr.Logger) (l logr.Logger) {
-	l = in
 	if Settings.atDebug(level) {
-		l = l.V(int(zap.DebugLevel))
+		l = in.V(1)
 	} else {
-		l = in
+		l = in.V(0)
 	}
 
 	return

@@ -3,6 +3,7 @@ package model
 import (
 	"database/sql"
 	"github.com/konveyor/controller/pkg/logging"
+	"github.com/konveyor/controller/pkg/ref"
 	_ "github.com/mattn/go-sqlite3"
 	"reflect"
 )
@@ -110,4 +111,10 @@ func Clone(model Model) Model {
 	new := reflect.New(mt).Elem()
 	new.Set(mv)
 	return new.Addr().Interface().(Model)
+}
+
+//
+// Model description.
+func Describe(model Model) string {
+	return ref.ToKind(model) + ": " + model.String()
 }

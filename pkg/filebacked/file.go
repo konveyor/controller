@@ -96,7 +96,7 @@ func (w *Writer) Reader() (reader *Reader) {
 		func(r *Reader) {
 			r.Close()
 		})
-	log.V(4).Info(
+	log.V(5).Info(
 		"writer: reader created.",
 		"path",
 		w.path,
@@ -116,7 +116,7 @@ func (w *Writer) Close() {
 		return
 	}
 	_ = w.file.Close()
-	log.V(4).Info(
+	log.V(5).Info(
 		"writer: closed.",
 		"path",
 		w.path)
@@ -139,7 +139,7 @@ func (w *Writer) open() (err error) {
 		err = liberr.Wrap(err)
 		return
 	}
-	log.V(4).Info(
+	log.V(5).Info(
 		"writer: opened.",
 		"path",
 		w.path)
@@ -405,7 +405,7 @@ func (r *Reader) open() (err error) {
 		err = liberr.Wrap(err)
 		return
 	}
-	log.V(4).Info(
+	log.V(5).Info(
 		"reader: opened.",
 		"path",
 		r.path)
@@ -423,7 +423,7 @@ func (r *Reader) Close() {
 		return
 	}
 	_ = r.file.Close()
-	log.V(4).Info(
+	log.V(5).Info(
 		"reader: closed.",
 		"path",
 		r.path)

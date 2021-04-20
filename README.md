@@ -18,8 +18,8 @@ Verbosity:
 Package:
 - filebacked:
   - Info(3): none.
-  - Info(4): file lifecycle.
-  - Info(5): file read,write.
+  - Info(4): none.
+  - Info(5): file create,delete,read,write.
 - inventory:
   - container:
     - Info(3): reconciler lifecycle.
