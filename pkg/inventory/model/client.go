@@ -146,9 +146,9 @@ func (r *Client) Get(model Model) (err error) {
 	err = Table{r.db}.Get(model)
 	if err == nil {
 		r.log.V(4).Info(
-			"get",
+			"get succeeded.",
 			"model",
-			model.String())
+			Describe(model))
 	}
 
 	return
@@ -161,7 +161,7 @@ func (r *Client) List(list interface{}, options ListOptions) (err error) {
 	err = Table{r.db}.List(list, options)
 	if err == nil {
 		r.log.V(4).Info(
-			"list",
+			"list succeeded.",
 			"options",
 			options)
 	}
@@ -175,7 +175,7 @@ func (r *Client) Iter(model interface{}, options ListOptions) (itr fb.Iterator, 
 	itr, err = Table{r.db}.Iter(model, options)
 	if err == nil {
 		r.log.V(4).Info(
-			"iter",
+			"iter succeeded",
 			"options",
 			options)
 	}
@@ -189,7 +189,7 @@ func (r *Client) Count(model Model, predicate Predicate) (n int64, err error) {
 	n, err = Table{r.db}.Count(model, predicate)
 	if err == nil {
 		r.log.V(4).Info(
-			"count",
+			"count succeeded.",
 			"predicate",
 			predicate)
 	}
@@ -252,7 +252,7 @@ func (r *Client) Insert(model Model) error {
 	r.log.V(4).Info(
 		"model inserted.",
 		"model",
-		model.String())
+		Describe(model))
 
 	return nil
 }
@@ -287,7 +287,7 @@ func (r *Client) Update(model Model) error {
 	r.log.V(4).Info(
 		"model updated.",
 		"model",
-		model.String())
+		Describe(model))
 
 	return nil
 }
@@ -323,7 +323,7 @@ func (r *Client) Delete(model Model) error {
 	r.log.V(4).Info(
 		"model deleted.",
 		"model",
-		model.String())
+		Describe(model))
 
 	return nil
 }
@@ -376,7 +376,7 @@ func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) 
 	r.log.V(4).Info(
 		"watch started.",
 		"model",
-		model.String(),
+		Describe(model),
 		"count",
 		itr.Len())
 
@@ -415,9 +415,9 @@ func (r *Tx) Get(model Model) (err error) {
 	err = Table{r.real}.Get(model)
 	if err == nil {
 		r.log.V(4).Info(
-			"get",
+			"get succeeded.",
 			"model",
-			model.String())
+			Describe(model))
 	}
 
 	return
@@ -430,7 +430,21 @@ func (r *Tx) List(list interface{}, options ListOptions) (err error) {
 	err = Table{r.real}.List(list, options)
 	if err == nil {
 		r.log.V(4).Info(
-			"list",
+			"list succeeded.",
+			"options",
+			options)
+	}
+
+	return
+}
+
+//
+// List models.
+func (r *Tx) Iter(model interface{}, options ListOptions) (itr fb.Iterator, err error) {
+	itr, err = Table{r.real}.Iter(model, options)
+	if err == nil {
+		r.log.V(4).Info(
+			"iter succeeded",
 			"options",
 			options)
 	}
@@ -444,7 +458,7 @@ func (r *Tx) Count(model Model, predicate Predicate) (n int64, err error) {
 	n, err = Table{r.real}.Count(model, predicate)
 	if err == nil {
 		r.log.V(4).Info(
-			"count",
+			"count succeeded.",
 			"predicate",
 			predicate)
 	}
@@ -472,7 +486,7 @@ func (r *Tx) Insert(model Model) error {
 	r.log.V(4).Info(
 		"model inserted.",
 		"model",
-		model.String())
+		Describe(model))
 
 	return nil
 }
@@ -508,7 +522,7 @@ func (r *Tx) Update(model Model) error {
 	r.log.V(4).Info(
 		"model updated.",
 		"model",
-		model.String())
+		Describe(model))
 
 	return nil
 }
@@ -542,7 +556,7 @@ func (r *Tx) Delete(model Model) error {
 	r.log.V(4).Info(
 		"model deleted.",
 		"model",
-		model.String())
+		Describe(model))
 
 	return nil
 }
@@ -622,7 +636,7 @@ func (r *Labeler) Insert(table Table, model Model) error {
 		r.log.V(2).Info(
 			"label inserted.",
 			"model",
-			model.String(),
+			Describe(model),
 			"kind",
 			kind,
 			"label",
@@ -656,7 +670,7 @@ func (r *Labeler) Delete(table Table, model Model) error {
 		r.log.V(2).Info(
 			"label inserted.",
 			"model",
-			model.String(),
+			Describe(model),
 			"kind",
 			label.Kind,
 			"label",
