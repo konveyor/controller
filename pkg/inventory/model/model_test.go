@@ -24,8 +24,8 @@ type TestObject struct {
 	RowID  int64          `sql:"virtual"`
 	PK     string         `sql:"pk,generated(id)"`
 	ID     int            `sql:"key"`
-	Name   string         `sql:""`
-	Age    int            `sql:""`
+	Name   string         `sql:"index(a)"`
+	Age    int            `sql:"index(a)"`
 	Int8   int8           `sql:""`
 	Int16  int16          `sql:""`
 	Int32  int32          `sql:""`
