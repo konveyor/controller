@@ -333,18 +333,21 @@ func (r *Client) Delete(model Model) error {
 func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) {
 	w, err = r.journal.Watch(model, handler)
 	if err != nil {
-		return nil, err
+		return
 	}
+	defer func() {
+		if err != nil {
+			w.End()
+			w = nil
+		}
+	}()
 	itr, err := Table{r.db}.Iter(
 		model,
 		ListOptions{Detail: 1})
 	if err != nil {
 		return nil, err
-	} else {
-		defer itr.Close()
 	}
-	list := fb.List{}
-	defer list.Close()
+	list := fb.NewList()
 	for {
 		model, hasNext, mErr := itr.Next()
 		if mErr != nil {

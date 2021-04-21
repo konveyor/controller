@@ -461,8 +461,7 @@ func (t Table) Iter(model interface{}, options ListOptions) (itr fb.Iterator, er
 	defer func() {
 		_ = cursor.Close()
 	}()
-	list := fb.List{}
-	defer list.Close()
+	list := fb.NewList()
 	for cursor.Next() {
 		mt := reflect.TypeOf(model)
 		mPtr := reflect.New(mt.Elem())
