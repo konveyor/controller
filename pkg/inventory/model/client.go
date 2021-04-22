@@ -22,6 +22,8 @@ type DB interface {
 	Open(bool) error
 	// Close.
 	Close(bool) error
+	// Execute SQL.
+	Execute(sql string) (sql.Result, error)
 	// Get the specified model.
 	Get(Model) error
 	// List models based on the type of slice.
@@ -138,6 +140,14 @@ func (r *Client) Close(purge bool) error {
 	r.log.V(3).Info("DB closed.")
 
 	return nil
+}
+
+//
+// Execute SQL.
+func (r *Client) Execute(sql string) (sql.Result, error) {
+	r.dbMutex.Lock()
+	defer r.dbMutex.Unlock()
+	return r.db.Exec(sql)
 }
 
 //

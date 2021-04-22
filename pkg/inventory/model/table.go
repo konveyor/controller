@@ -311,7 +311,7 @@ func (t Table) IndexDDL(model interface{}, fields []*Field) (list []string, err 
 			bfr,
 			TmplData{
 				Table:  t.Name(model),
-				Index:  t.Name(model)+group,
+				Index:  t.Name(model) + group,
 				Fields: t.RealFields(idxFields),
 			})
 		if err != nil {
