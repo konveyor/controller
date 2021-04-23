@@ -114,21 +114,20 @@ func (r *Client) Get(url string, out interface{}) (status int, err error) {
 			url)
 		return
 	}
+	defer func() {
+		_ = response.Body.Close()
+	}()
+	content, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		err = liberr.Wrap(
+			err,
+			"Read body failed.",
+			"url",
+			url)
+		return
+	}
 	status = response.StatusCode
-	content := []byte{}
 	if status == http.StatusOK {
-		defer func() {
-			_ = response.Body.Close()
-		}()
-		content, err = ioutil.ReadAll(response.Body)
-		if err != nil {
-			err = liberr.Wrap(
-				err,
-				"Read body failed.",
-				"url",
-				url)
-			return
-		}
 		err = json.Unmarshal(content, out)
 		if err != nil {
 			err = liberr.Wrap(
@@ -173,22 +172,21 @@ func (r *Client) Post(url string, in interface{}, out interface{}) (status int, 
 			url)
 		return
 	}
+	defer func() {
+		_ = response.Body.Close()
+	}()
+	content, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		err = liberr.Wrap(
+			err,
+			"Read body failed.",
+			"url",
+			url)
+		return
+	}
 	status = response.StatusCode
-	content := []byte{}
 	if status == http.StatusOK {
-		defer func() {
-			_ = response.Body.Close()
-		}()
 		if out == nil {
-			return
-		}
-		content, err = ioutil.ReadAll(response.Body)
-		if err != nil {
-			err = liberr.Wrap(
-				err,
-				"Read body failed.",
-				"url",
-				url)
 			return
 		}
 		err = json.Unmarshal(content, out)
