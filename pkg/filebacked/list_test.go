@@ -46,8 +46,7 @@ func TestList(t *testing.T) {
 
 	cat := &catalog
 
-	list := List{}
-	defer list.Close()
+	list := NewList()
 
 	// append
 	for i := 0; i < len(input); i++ {
@@ -60,7 +59,6 @@ func TestList(t *testing.T) {
 
 	// iterate
 	itr := list.Iter()
-	defer itr.Close()
 	g.Expect(itr.Len()).To(gomega.Equal(len(input)))
 	for i := 0; i < len(input); i++ {
 		object, hasNext, err := itr.Next()
@@ -73,7 +71,6 @@ func TestList(t *testing.T) {
 	n := 0
 	itr = list.Iter()
 	g.Expect(itr.Error()).To(gomega.BeNil())
-	defer itr.Close()
 	for {
 		object, hasNext, err := itr.Next()
 		g.Expect(err).To(gomega.BeNil())
@@ -91,7 +88,6 @@ func TestList(t *testing.T) {
 	n = 0
 	itr = list.Iter()
 	g.Expect(itr.Error()).To(gomega.BeNil())
-	defer itr.Close()
 	for {
 		person := &Person{}
 		hasNext, err := itr.NextWith(person)

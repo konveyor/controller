@@ -3,8 +3,7 @@ Provides file-backed list.
 
 //
 // New list.
-list := fb.List{}
-defer list.Close()
+list := fb.NewList()
 
 //
 // Append an object.
@@ -13,7 +12,6 @@ err := list.Append(object)
 //
 // Iterate the list.
 itr := list.Iter()
-defer itr.Close()
 for {
     object, hasNext, err := itr.Next()
     if err != nil || !hasNext {
@@ -24,7 +22,6 @@ for {
 //
 // Iterate the list.
 itr := list.Iter()
-defer itr.Close()
 for {
     person := Person{}
     hasNext, err := itr.NextWith(&person))
@@ -34,6 +31,20 @@ for {
 }
 */
 package filebacked
+
+import "runtime"
+
+//
+// List factory.
+func NewList() (list *List) {
+	list = &List{}
+	runtime.SetFinalizer(
+		list,
+		func(l *List) {
+			l.Close()
+		})
+	return
+}
 
 //
 // File-backed list.

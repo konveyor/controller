@@ -504,7 +504,6 @@ func TestIter(t *testing.T) {
 		&TestObject{},
 		ListOptions{})
 	g.Expect(err).To(gomega.BeNil())
-	defer itr.Close()
 	g.Expect(itr.Len()).To(gomega.Equal(10))
 	var list []TestObject
 	for {
@@ -521,9 +520,7 @@ func TestIter(t *testing.T) {
 	itr, err = DB.Iter(
 		&TestObject{},
 		ListOptions{})
-	defer itr.Close()
 	g.Expect(err).To(gomega.BeNil())
-	defer itr.Close()
 	for {
 		object, hasNext, err := itr.Next()
 		g.Expect(err).To(gomega.BeNil())

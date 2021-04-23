@@ -163,9 +163,14 @@ type WatchWriter struct {
 
 //
 // End.
+// Close the socket.
+// End the watch.
+// Reset the watch (pointer) to release both
+// objects for garbage collection.
 func (r *WatchWriter) end() {
 	_ = r.webSocket.Close()
 	r.watch.End()
+	r.watch = &model.Watch{}
 	r.log.V(3).Info("watch ended.")
 }
 
@@ -312,11 +317,13 @@ func (r *Watched) Watch(
 		builder:   rb,
 		log:       wlog,
 	}
-	writer.watch, err = db.Watch(m, writer)
+	watch, err := db.Watch(m, writer)
 	if err != nil {
 		_ = socket.Close()
 		return
 	}
+
+	writer.watch = watch
 
 	log.V(3).Info(
 		"handler: watch created.",

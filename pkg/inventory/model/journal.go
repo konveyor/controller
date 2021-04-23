@@ -147,7 +147,6 @@ func (w *Watch) notify(itr fb.Iterator) {
 	select {
 	case w.queue <- itr:
 	default:
-		itr.Close()
 		description := "full queue, event discarded"
 		w.Handler.Error(liberr.New(description))
 		w.log.V(3).Info(description)
@@ -202,7 +201,6 @@ func (w *Watch) Start() {
 				}
 			}
 			count++
-			itr.Close()
 			if count == 1 {
 				w.log.V(3).Info("has parity.")
 				w.Handler.Parity()
