@@ -24,8 +24,8 @@ type TestObject struct {
 	RowID  int64          `sql:"virtual"`
 	PK     string         `sql:"pk,generated(id)"`
 	ID     int            `sql:"key"`
-	Name   string         `sql:""`
-	Age    int            `sql:""`
+	Name   string         `sql:"index(a)"`
+	Age    int            `sql:"index(a)"`
 	Int8   int8           `sql:""`
 	Int16  int16          `sql:""`
 	Int32  int32          `sql:""`
@@ -239,7 +239,6 @@ func TestTransactions(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	DB := New(
 		"/tmp/test.db",
-		&Label{},
 		&TestObject{})
 	err := DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
@@ -271,7 +270,6 @@ func TestList(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	DB := New(
 		"/tmp/test.db",
-		&Label{},
 		&TestObject{})
 	err = DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
@@ -474,7 +472,6 @@ func TestIter(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	DB := New(
 		"/tmp/test.db",
-		&Label{},
 		&TestObject{})
 	err = DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
@@ -534,11 +531,11 @@ func TestIter(t *testing.T) {
 
 func TestWatch(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	DB := New(
-		"/tmp/test.db",
-		&Label{},
-		&TestObject{})
+	DB := New("/tmp/test.db", &TestObject{})
 	err := DB.Open(true)
+	defer func() {
+		_ = DB.Close(false)
+	}()
 	g.Expect(err).To(gomega.BeNil())
 	// Handler A
 	handlerA := &TestHandler{name: "A"}
@@ -709,11 +706,11 @@ func TestWatch(t *testing.T) {
 
 func TestCloseDB(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	DB := New(
-		"/tmp/test.db",
-		&Label{},
-		&TestObject{})
+	DB := New("/tmp/test.db", &TestObject{})
 	err := DB.Open(true)
+	defer func() {
+		_ = DB.Close(false)
+	}()
 	g.Expect(err).To(gomega.BeNil())
 	handler := &TestHandler{name: "A"}
 	watch, err := DB.Watch(&TestObject{}, handler)
@@ -740,11 +737,9 @@ func TestCloseDB(t *testing.T) {
 
 func TestMutatingWatch(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	DB := New(
-		"/tmp/test.db",
-		&Label{},
-		&TestObject{})
+	DB := New("/tmp/test.db", &TestObject{})
 	err := DB.Open(true)
+
 	g.Expect(err).To(gomega.BeNil())
 	// Handler A
 	handlerA := &MutatingHandler{
@@ -781,6 +776,27 @@ func TestMutatingWatch(t *testing.T) {
 	}
 }
 
+func TestExecute(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	type Person struct {
+		ID   int    `sql:"pk"`
+		Name string `sql:""`
+	}
+	DB := New("/tmp/test.db", &Person{})
+	err := DB.Open(true)
+	defer func() {
+		_ = DB.Close(false)
+	}()
+
+	g.Expect(err).To(gomega.BeNil())
+
+	result, err := DB.Execute(
+		"INSERT INTO Person (id, name) values (0, 'john');")
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(result.RowsAffected()).To(gomega.Equal(int64(1)))
+}
+
 //
 // Remove leading __ to enable.
 func __TestConcurrency(t *testing.T) {
@@ -788,6 +804,9 @@ func __TestConcurrency(t *testing.T) {
 
 	DB := New("/tmp/test.db", &TestObject{})
 	DB.Open(true)
+	defer func() {
+		_ = DB.Close(false)
+	}()
 
 	N := 1000
 

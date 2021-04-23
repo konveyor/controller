@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS {{.Table}} (
 `
 
 var IndexDDL = `
-CREATE INDEX IF NOT EXISTS {{.Table}}Index
+CREATE INDEX IF NOT EXISTS {{.Index}}Index
 ON {{.Table}}
 (
 {{ range $i,$f := .Fields -}}
@@ -195,21 +195,49 @@ func (t Table) Validate(fields []*Field) error {
 
 //
 // Get table and index create DDL.
-func (t Table) DDL(model interface{}) ([]string, error) {
-	list := []string{}
-	tpl := template.New("")
+func (t Table) DDL(model interface{}) (list []string, err error) {
+	list = []string{}
 	fields, err := t.Fields(model)
 	if err != nil {
-		return nil, err
+		return
 	}
 	err = t.Validate(fields)
 	if err != nil {
-		return nil, err
+		return
 	}
-	// Table
+	ddl, err := t.TableDDL(model, fields)
+	if err != nil {
+		return
+	}
+	for _, stmt := range ddl {
+		list = append(list, stmt)
+	}
+	ddl, err = t.KeyIndexDDL(model, fields)
+	if err != nil {
+		return
+	}
+	for _, stmt := range ddl {
+		list = append(list, stmt)
+	}
+	ddl, err = t.IndexDDL(model, fields)
+	if err != nil {
+		return
+	}
+	for _, stmt := range ddl {
+		list = append(list, stmt)
+	}
+
+	return
+}
+
+//
+// Build table DDL.
+func (t Table) TableDDL(model interface{}, fields []*Field) (list []string, err error) {
+	tpl := template.New("")
 	tpl, err = tpl.Parse(TableDDL)
 	if err != nil {
-		return nil, liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 	constraints := t.Constraints(fields)
 	bfr := &bytes.Buffer{}
@@ -221,30 +249,79 @@ func (t Table) DDL(model interface{}) ([]string, error) {
 			Constraints: constraints,
 		})
 	if err != nil {
-		return nil, liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 	list = append(list, bfr.String())
-	// Index.
-	fields = t.KeyFields(fields)
-	if len(fields) > 0 {
+	return
+}
+
+//
+// Build natural key index DDL.
+func (t Table) KeyIndexDDL(model interface{}, fields []*Field) (list []string, err error) {
+	tpl := template.New("")
+	keyFields := t.KeyFields(fields)
+	if len(keyFields) > 0 {
 		tpl, err = tpl.Parse(IndexDDL)
 		if err != nil {
-			return nil, liberr.Wrap(err)
+			err = liberr.Wrap(err)
+			return
 		}
-		bfr = &bytes.Buffer{}
+		bfr := &bytes.Buffer{}
 		err = tpl.Execute(
 			bfr,
 			TmplData{
 				Table:  t.Name(model),
-				Fields: t.RealFields(fields),
+				Index:  t.Name(model),
+				Fields: t.RealFields(keyFields),
 			})
 		if err != nil {
-			return nil, liberr.Wrap(err)
+			err = liberr.Wrap(err)
+			return
 		}
 		list = append(list, bfr.String())
 	}
 
-	return list, nil
+	return
+}
+
+//
+// Build non-unique index DDL.
+func (t Table) IndexDDL(model interface{}, fields []*Field) (list []string, err error) {
+	tpl := template.New("")
+	index := map[string][]*Field{}
+	for _, field := range fields {
+		for _, group := range field.Index() {
+			list, found := index[group]
+			if found {
+				index[group] = append(list, field)
+			} else {
+				index[group] = []*Field{field}
+			}
+		}
+	}
+	for group, idxFields := range index {
+		tpl, err = tpl.Parse(IndexDDL)
+		if err != nil {
+			err = liberr.Wrap(err)
+			return
+		}
+		bfr := &bytes.Buffer{}
+		err = tpl.Execute(
+			bfr,
+			TmplData{
+				Table:  t.Name(model),
+				Index:  t.Name(model) + group,
+				Fields: t.RealFields(idxFields),
+			})
+		if err != nil {
+			err = liberr.Wrap(err)
+			return
+		}
+		list = append(list, bfr.String())
+	}
+
+	return
 }
 
 //
@@ -894,6 +971,10 @@ func (t Table) scan(row Row, fields []*Field) error {
 var UniqueRegex = regexp.MustCompile(`(unique)(\()(.+)(\))`)
 
 //
+// Regex used for `index(group)` tags.
+var IndexRegex = regexp.MustCompile(`(index)(\()(.+)(\))`)
+
+//
 // Regex used for `fk:<table>(field)` tags.
 var FkRegex = regexp.MustCompile(`(fk):(.+)(\()(.+)(\))`)
 
@@ -908,8 +989,14 @@ var FkRegex = regexp.MustCompile(`(fk):(.+)(\()(.+)(\))`)
 //       Foreign key `T` = model type, `F` = model field.
 //   `sql:"unique(G)"`
 //       Unique index. `G` = unique-together fields.
+//   `sql:"index(G)"`
+//       Non-unique index. `G` = unique-together fields.
 //   `sql:"const"`
 //       The field is immutable and not included on update.
+//   `sql:"virtual"`
+//       The field is read-only and managed internally by the DB.
+//   `sql:"dn"`
+//       The field detail level.  n = level number (0-9).
 //
 type Field struct {
 	// reflect.Value of the field.
@@ -1145,6 +1232,21 @@ func (f *Field) Unique() []string {
 }
 
 //
+// Get whether the field has non-unique index.
+func (f *Field) Index() []string {
+	list := []string{}
+	for _, opt := range strings.Split(f.Tag, ",") {
+		opt = strings.TrimSpace(opt)
+		m := IndexRegex.FindStringSubmatch(opt)
+		if m != nil && len(m) == 5 {
+			list = append(list, m[3])
+		}
+	}
+
+	return list
+}
+
+//
 // Get whether the field is a foreign key.
 func (f *Field) Fk() *FK {
 	for _, opt := range strings.Split(f.Tag, ",") {
@@ -1331,6 +1433,8 @@ func (f *FK) DDL(field *Field) string {
 type TmplData struct {
 	// Table name.
 	Table string
+	// Index name.
+	Index string
 	// Fields.
 	Fields []*Field
 	// Constraint DDL.

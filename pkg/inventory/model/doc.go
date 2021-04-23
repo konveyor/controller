@@ -11,6 +11,8 @@
 //       Foreign key `T` = model type, `F` = model field.
 //   `sql:"unique(G)"`
 //       Unique index. `G` = unique-together fields.
+//   `sql:"index(G)"`
+//       Non-unique index. `G` = unique-together fields.
 //   `sql:"const"`
 //       The field is immutable and not included on update.
 //   `sql:"virtual"`
