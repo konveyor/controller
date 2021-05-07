@@ -79,6 +79,13 @@ func (r *StockEventHandler) Error(*Watch, error) {}
 func (r *StockEventHandler) End() {}
 
 //
+// Param.
+type Param struct {
+	Key   string
+	Value string
+}
+
+//
 // REST client.
 type Client struct {
 	// Transport.
@@ -89,7 +96,7 @@ type Client struct {
 
 //
 // HTTP GET (method).
-func (r *Client) Get(url string, out interface{}) (status int, err error) {
+func (r *Client) Get(url string, out interface{}, params ...Param) (status int, err error) {
 	parsedURL, err := liburl.Parse(url)
 	if err != nil {
 		err = liberr.Wrap(
@@ -103,6 +110,13 @@ func (r *Client) Get(url string, out interface{}) (status int, err error) {
 		Header: r.Header,
 		Method: http.MethodGet,
 		URL:    parsedURL,
+	}
+	if len(params) > 0 {
+		q := request.URL.Query()
+		for _, p := range params {
+			q.Add(p.Key, p.Value)
+		}
+		parsedURL.RawQuery = q.Encode()
 	}
 	client := http.Client{Transport: r.Transport}
 	response, err := client.Do(request)
