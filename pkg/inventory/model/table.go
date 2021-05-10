@@ -345,7 +345,7 @@ func (t Table) Insert(model interface{}) error {
 				return t.Update(model)
 			}
 		}
-		return liberr.Wrap(err, "sql", stmt)
+		return liberr.Wrap(err, "sql", stmt, "params", params)
 	}
 	_, err = r.RowsAffected()
 	if err != nil {
@@ -355,7 +355,9 @@ func (t Table) Insert(model interface{}) error {
 	log.V(5).Info(
 		"table: model inserted.",
 		"sql",
-		stmt)
+		stmt,
+		"params",
+		params)
 
 	return nil
 }
@@ -376,7 +378,7 @@ func (t Table) Update(model interface{}) error {
 	params := t.Params(fields)
 	r, err := t.DB.Exec(stmt, params...)
 	if err != nil {
-		return liberr.Wrap(err, "sql", stmt)
+		return liberr.Wrap(err, "sql", stmt, "params", params)
 	}
 	nRows, err := r.RowsAffected()
 	if err != nil {
@@ -389,7 +391,9 @@ func (t Table) Update(model interface{}) error {
 	log.V(5).Info(
 		"table: model updated.",
 		"sql",
-		stmt)
+		stmt,
+		"params",
+		params)
 
 	return nil
 }
@@ -410,7 +414,7 @@ func (t Table) Delete(model interface{}) error {
 	params := t.Params(fields)
 	r, err := t.DB.Exec(stmt, params...)
 	if err != nil {
-		return liberr.Wrap(err, "sql", stmt)
+		return liberr.Wrap(err, "sql", stmt, "params", params)
 	}
 	nRows, err := r.RowsAffected()
 	if err != nil {
@@ -423,7 +427,9 @@ func (t Table) Delete(model interface{}) error {
 	log.V(5).Info(
 		"table: model deleted.",
 		"sql",
-		stmt)
+		stmt,
+		"params",
+		params)
 
 	return nil
 }
@@ -446,13 +452,15 @@ func (t Table) Get(model interface{}) error {
 	row := t.DB.QueryRow(stmt, params...)
 	err = t.scan(row, fields)
 	if err != nil {
-		err = liberr.Wrap(err, "sql", stmt)
+		err = liberr.Wrap(err, "sql", stmt, "params", params)
 	}
 
 	log.V(5).Info(
 		"table: get succeeded.",
 		"sql",
-		stmt)
+		stmt,
+		"params",
+		params)
 
 	return err
 }
@@ -488,7 +496,7 @@ func (t Table) List(list interface{}, options ListOptions) error {
 	params := options.Params()
 	cursor, err := t.DB.Query(stmt, params...)
 	if err != nil {
-		return liberr.Wrap(err, "sql", stmt)
+		return liberr.Wrap(err, "sql", stmt, "params", params)
 	}
 	defer func() {
 		_ = cursor.Close()
@@ -512,7 +520,9 @@ func (t Table) List(list interface{}, options ListOptions) error {
 	log.V(5).Info(
 		"table: list succeeded.",
 		"sql",
-		stmt)
+		stmt,
+		"params",
+		params)
 
 	return nil
 }
@@ -532,7 +542,7 @@ func (t Table) Iter(model interface{}, options ListOptions) (itr fb.Iterator, er
 	params := options.Params()
 	cursor, err := t.DB.Query(stmt, params...)
 	if err != nil {
-		err = liberr.Wrap(err, "sql", stmt)
+		err = liberr.Wrap(err, "sql", stmt, "params", params)
 		return
 	}
 	defer func() {
@@ -562,7 +572,9 @@ func (t Table) Iter(model interface{}, options ListOptions) (itr fb.Iterator, er
 	log.V(5).Info(
 		"table: list (iter) succeeded.",
 		"sql",
-		stmt)
+		stmt,
+		"params",
+		params)
 
 	return
 }
@@ -587,13 +599,15 @@ func (t Table) Count(model interface{}, predicate Predicate) (int64, error) {
 	row := t.DB.QueryRow(stmt, params...)
 	err = row.Scan(&count)
 	if err != nil {
-		return 0, liberr.Wrap(err, "sql", stmt)
+		return 0, liberr.Wrap(err, "sql", stmt, "params", params)
 	}
 
 	log.V(5).Info(
 		"table: count succeeded.",
 		"sql",
-		stmt)
+		stmt,
+		"params",
+		params)
 
 	return count, nil
 }
