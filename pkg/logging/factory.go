@@ -6,7 +6,6 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"os"
-	"time"
 )
 
 //
@@ -23,44 +22,29 @@ type ZapBuilder struct {
 
 //
 // Build new logger.
-func (b *ZapBuilder) New() (l logr.Logger) {
+func (b *ZapBuilder) New() (logger logr.Logger) {
 	var encoder zapcore.Encoder
-	var options []zap.Option
 	sinker := zapcore.AddSync(os.Stderr)
+	level := zap.NewAtomicLevelAt(zap.DebugLevel)
+	options := []zap.Option{
+		zap.AddStacktrace(zap.ErrorLevel),
+		zap.ErrorOutput(sinker),
+		zap.AddCallerSkip(1),
+	}
 	if Settings.Development {
 		cfg := zap.NewDevelopmentEncoderConfig()
 		encoder = zapcore.NewConsoleEncoder(cfg)
-		options = append(
-			options,
-			zap.Development(),
-			zap.AddStacktrace(zap.ErrorLevel))
+		options = append(options, zap.Development())
 	} else {
 		cfg := zap.NewProductionEncoderConfig()
 		encoder = zapcore.NewJSONEncoder(cfg)
-		options = append(
-			options,
-			zap.AddStacktrace(zap.WarnLevel),
-			zap.WrapCore(
-				func(core zapcore.Core) zapcore.Core {
-					return zapcore.NewSampler(
-						core,
-						time.Second,
-						100,
-						100)
-				}))
 	}
-	level := zap.NewAtomicLevelAt(zap.DebugLevel)
-	options = append(
-		options,
-		zap.AddCallerSkip(1),
-		zap.ErrorOutput(sinker))
-	log := zap.New(
-		zapcore.NewCore(
-			encoder,
-			sinker,
-			level))
-	log = log.WithOptions(options...)
-	l = zapr.NewLogger(log)
+	logger = zapr.NewLogger(
+		zap.New(
+			zapcore.NewCore(
+				encoder,
+				sinker,
+				level)).WithOptions(options...))
 
 	return
 }

@@ -1,0 +1,362 @@
+//
+// Web stack integration test.
+package main
+
+import (
+	"errors"
+	"fmt"
+	"github.com/gin-gonic/gin"
+	liberr "github.com/konveyor/controller/pkg/error"
+	"github.com/konveyor/controller/pkg/inventory/container"
+	"github.com/konveyor/controller/pkg/inventory/model"
+	"github.com/konveyor/controller/pkg/inventory/web"
+	"github.com/konveyor/controller/pkg/logging"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"net/http"
+	"os"
+	"runtime"
+	"strconv"
+	"time"
+)
+
+var log = logging.WithName("TESTER")
+
+//
+// Model object.
+type Model struct {
+	ID   int    `sql:"pk"`
+	Name string `sql:"index(a)"`
+	Age  int    `sql:"index(a)"`
+}
+
+func (m *Model) Pk() string {
+	return fmt.Sprintf("%d", m.ID)
+}
+
+func (m *Model) String() string {
+	return fmt.Sprintf(
+		"Model: id: %d, name:%s",
+		m.ID,
+		m.Name)
+}
+
+func (m *Model) Equals(other model.Model) bool {
+	return false
+}
+
+func (m *Model) Labels() model.Labels {
+	return nil
+}
+
+//
+// Watch (event) handler.
+type EventHandler struct {
+	name    string
+	started bool
+	parity  bool
+	created []int
+	updated []int
+	deleted []int
+	err     []error
+	done    bool
+	wid     uint64
+}
+
+func (h *EventHandler) Started(wid uint64) {
+	h.wid = wid
+	h.started = true
+
+	fmt.Printf("[%d] Event (started)\n", wid)
+}
+
+func (h *EventHandler) Parity() {
+	h.parity = true
+
+	fmt.Printf("[%d] Event (parity)\n", h.wid)
+}
+
+func (h *EventHandler) Created(e web.Event) {
+	if object, cast := e.Resource.(*Model); cast {
+		h.created = append(h.created, object.ID)
+	}
+
+	fmt.Printf("[%d] Event (created): %v\n", h.wid, e)
+}
+
+func (h *EventHandler) Updated(e web.Event) {
+	if object, cast := e.Resource.(*Model); cast {
+		h.updated = append(h.updated, object.ID)
+	}
+
+	fmt.Printf("[%d] Event (updated): %v\n", h.wid, e)
+}
+func (h *EventHandler) Deleted(e web.Event) {
+	if object, cast := e.Resource.(*Model); cast {
+		h.deleted = append(h.deleted, object.ID)
+	}
+
+	fmt.Printf("[%d] Event (deleted): %v\n", h.wid, e)
+}
+
+func (h *EventHandler) Error(w *web.Watch, err error) {
+	h.err = append(h.err, err)
+	_ = w.Repair()
+
+	fmt.Printf("[%d] Event (error): %v\n", h.wid, err)
+}
+
+func (h *EventHandler) End() {
+	h.done = true
+
+	fmt.Printf("[%d] Event (end)\n", h.wid)
+}
+
+type Endpoint struct {
+	web.Watched
+	db model.DB
+}
+
+func (h *Endpoint) Get(ctx *gin.Context) {
+	id, _ := strconv.Atoi(ctx.Query("id"))
+	m := &Model{ID: id}
+	err := h.db.Get(m)
+	if err != nil {
+		if errors.Is(err, model.NotFound) {
+			ctx.Status(http.StatusNotFound)
+		} else {
+			ctx.Status(http.StatusInternalServerError)
+		}
+		return
+	}
+
+	ctx.JSON(http.StatusOK, m)
+}
+
+func (h *Endpoint) List(ctx *gin.Context) {
+	// Watch request.
+	h.Watched.Prepare(ctx)
+	if h.WatchRequest {
+		err := h.Watch(
+			ctx,
+			h.db,
+			&Model{},
+			func(in model.Model) (r interface{}) {
+				r = in
+				return
+			})
+		if err != nil {
+			ctx.Status(http.StatusInternalServerError)
+		}
+		return
+	}
+	// List request.
+	list := []Model{}
+	err := h.db.List(&list, model.ListOptions{Detail: 1})
+	if err != nil {
+		ctx.Status(http.StatusInternalServerError)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, list)
+}
+
+func (h *Endpoint) AddRoutes(e *gin.Engine) {
+	e.GET("/models", h.List)
+	e.GET("/models/:id", h.Get)
+}
+
+//
+// Data reconciler.
+type DataReconciler struct {
+	db model.DB
+}
+
+func (r *DataReconciler) Name() string {
+	return "tester"
+}
+
+func (r *DataReconciler) Owner() meta.Object {
+	return &meta.ObjectMeta{
+		UID: "TEST",
+	}
+}
+
+func (r *DataReconciler) Start() error {
+	return nil
+}
+
+func (r *DataReconciler) Shutdown() {
+}
+
+func (r *DataReconciler) DB() model.DB {
+	return r.db
+}
+
+func (r *DataReconciler) HasParity() bool {
+	return true
+}
+
+func (r *DataReconciler) Test() error {
+	return nil
+}
+
+func (r *DataReconciler) Reset() {
+}
+
+func setup() (db model.DB, webSrv *web.WebServer) {
+	//
+	// open DB.
+	db = model.New("/tmp/integration.db", &Model{})
+	err := db.Open(true)
+	if err != nil {
+		panic(err)
+	}
+	//
+	// Populate the DB.
+	for i := 0; i < 10; i++ {
+		err = db.Insert(
+			&Model{
+				ID:   i,
+				Name: fmt.Sprintf("m-%.4d", i),
+				Age:  i + 10,
+			})
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	//
+	// Build container.
+	dr := &DataReconciler{db}
+	cnt := container.New()
+	err = cnt.Add(dr)
+	if err != nil {
+		panic(err)
+	}
+
+	//
+	// Launch web server.
+	webSrv = web.New(cnt, &Endpoint{db: db})
+	webSrv.Port = 7001
+	webSrv.Start()
+	return
+}
+
+func list(client *web.Client) {
+	list := []Model{}
+	status, err := client.Get("http://localhost:7001/models", &list)
+	if err != nil {
+		panic(err)
+	}
+	if status != http.StatusOK {
+		panic(liberr.New(http.StatusText(status)))
+	}
+
+	fmt.Println("List")
+	fmt.Println("___________________________")
+	for _, m := range list {
+		fmt.Println(m)
+	}
+}
+
+func get(client *web.Client) {
+	m := &Model{}
+	status, err := client.Get("http://localhost:7001/models/0", m)
+	if err != nil {
+		panic(err)
+	}
+	if status != http.StatusOK {
+		panic(liberr.New(http.StatusText(status)))
+	}
+
+	fmt.Printf("\nGet: %v\n", m)
+}
+
+func watch(client *web.Client) (watch *web.Watch) {
+	status, watch, err := client.Watch(
+		"http://localhost:7001/models",
+		&Model{},
+		&EventHandler{})
+	if err != nil {
+		panic(err)
+	}
+	if status != http.StatusOK {
+		panic(liberr.New(http.StatusText(status)))
+	}
+
+	fmt.Printf("\nWatch started: %d\n", watch.ID())
+
+	return
+}
+
+func endWatch(w *web.Watch) {
+	fmt.Printf("\nEnd watch: %d\n", w.ID())
+	w.End()
+	wait(500)
+}
+
+func wait(d time.Duration) {
+	time.Sleep(d * time.Millisecond)
+}
+
+//
+// Basic test.
+func testA(client *web.Client) {
+	w := watch(client)
+	get(client)
+	list(client)
+	endWatch(w)
+	wait(500)
+}
+
+//
+// Test client watch normal lifecycle.
+func testB(client *web.Client, n int) {
+	for i := 0; i < n; i++ {
+		w := watch(client)
+		wait(500)
+		endWatch(w)
+	}
+}
+
+//
+// Test watch client finalizer.
+func testC(client *web.Client, n int) {
+	for i := 0; i < n; i++ {
+		w := watch(client)
+		fmt.Println(w.ID())
+		wait(500)
+		w = nil
+		runtime.GC()
+		wait(500)
+	}
+}
+
+//
+// Test close Db.
+func testD(db model.DB, client *web.Client) {
+	w := watch(client)
+	wait(100)
+	fmt.Println(w.ID())
+	_ = db.Close(false)
+}
+
+//
+// Main.
+func main() {
+	db, _ := setup()
+	fmt.Println(db)
+	client := &web.Client{
+		Transport: http.DefaultTransport,
+	}
+	n := 3
+	if len(os.Args) > 1 {
+		n, _ = strconv.Atoi(os.Args[1])
+	}
+	wait(100)
+	testA(client)
+	testB(client, n)
+	testC(client, n)
+	testD(db, client)
+	wait(500)
+}

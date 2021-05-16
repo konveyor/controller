@@ -13,6 +13,7 @@ import (
 	"net/http"
 	liburl "net/url"
 	"reflect"
+	"runtime"
 	"time"
 )
 
@@ -240,6 +241,17 @@ func (r *Client) Watch(
 	}
 	post := func(w *WatchReader) (pStatus int, pErr error) {
 		socket, response, pErr := dialer.Dial(url, header)
+		if response != nil {
+			pStatus = response.StatusCode
+			switch pStatus {
+			case http.StatusOK,
+				http.StatusSwitchingProtocols:
+				pStatus = http.StatusOK
+			default:
+				pErr = nil
+				return
+			}
+		}
 		if pErr != nil {
 			pErr = liberr.Wrap(
 				pErr,
@@ -247,42 +259,28 @@ func (r *Client) Watch(
 				"url",
 				url)
 			return
-		}
-		pStatus = response.StatusCode
-		switch pStatus {
-		case http.StatusOK,
-			http.StatusSwitchingProtocols:
-			pStatus = http.StatusOK
+		} else {
 			w.webSocket = socket
 		}
 		return
 	}
-	rlog := logging.WithName("web|watch|reader")
 	reader := &WatchReader{
 		resource: resource,
 		handler:  handler,
 		repair:   post,
-		log:      rlog,
 	}
 	status, err = post(reader)
 	if err != nil || status != http.StatusOK {
 		return
 	}
-	reader.log = reader.log.WithValues(
-		"local",
-		reader.webSocket.LocalAddr(),
-		"resource",
-		ref.ToKind(resource))
-
 	w = &Watch{reader: reader}
-	reader.start()
+	runtime.SetFinalizer(
+		w,
+		func(w *Watch) {
+			w.End()
+		})
 
-	log.V(3).Info(
-		"client: watch created.",
-		"local",
-		reader.webSocket.LocalAddr(),
-		"remote",
-		reader.webSocket.RemoteAddr())
+	reader.start()
 
 	return
 }
@@ -333,6 +331,9 @@ type WatchReader struct {
 //
 // Terminate.
 func (r *WatchReader) Terminate() {
+	if r.done {
+		return
+	}
 	r.done = true
 	_ = r.webSocket.Close()
 	r.log.V(3).Info("reader terminated.")
@@ -346,11 +347,27 @@ func (r *WatchReader) Repair() (status int, err error) {
 }
 
 //
+// Reset logger.
+func (r *WatchReader) resetLog() {
+	r.log = logging.WithName(
+		"web|watch|reader",
+		"local",
+		r.webSocket.LocalAddr(),
+		"remote",
+		r.webSocket.RemoteAddr(),
+		"resource",
+		ref.ToKind(r.resource),
+		"watch",
+		r.id)
+}
+
+//
 // Dispatch events.
 func (r *WatchReader) start() {
 	if r.started {
 		return
 	}
+	r.resetLog()
 	r.started = true
 	r.done = false
 	go func() {
@@ -374,6 +391,7 @@ func (r *WatchReader) start() {
 				}
 				time.Sleep(time.Second * 3)
 				r.handler.Error(&Watch{reader: r}, err)
+				continue
 			}
 			r.log.V(5).Info(
 				"event: received.",
@@ -382,14 +400,8 @@ func (r *WatchReader) start() {
 			switch event.Action {
 			case libmodel.Started:
 				r.id = event.ID
+				r.resetLog()
 				r.handler.Started(r.id)
-				r.log = r.log.WithValues(
-					"watch",
-					r.id)
-				r.log.V(3).Info(
-					"updated with peer watch ID.",
-					"event",
-					event.String())
 			case libmodel.Parity:
 				r.handler.Parity()
 			case libmodel.Error:
@@ -435,13 +447,17 @@ func (r *Watch) ID() uint64 {
 }
 
 //
-// End the watch.
+// Repair the watch.
 func (r *Watch) Repair() (err error) {
 	status, err := r.reader.Repair()
 	if err != nil {
 		return
 	}
-	if status != http.StatusOK {
+	switch status {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		r.End()
+	default:
 		err = liberr.New(http.StatusText(status))
 	}
 
@@ -451,6 +467,12 @@ func (r *Watch) Repair() (err error) {
 //
 // End the watch.
 func (r *Watch) End() {
+	r.reader.log.V(3).Info("wtach end requested.")
+	_ = r.reader.webSocket.WriteJSON(
+		Event{
+			Action: libmodel.End,
+		})
+	time.Sleep(50 * time.Millisecond)
 	r.reader.Terminate()
 }
 

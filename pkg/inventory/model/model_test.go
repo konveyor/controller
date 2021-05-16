@@ -741,6 +741,7 @@ func TestMutatingWatch(t *testing.T) {
 	err := DB.Open(true)
 
 	g.Expect(err).To(gomega.BeNil())
+
 	// Handler A
 	handlerA := &MutatingHandler{
 		name: "A",
