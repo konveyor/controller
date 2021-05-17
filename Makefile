@@ -2,8 +2,16 @@ GOOS ?= `go env GOOS`
 GOBIN ?= ${GOPATH}/bin
 
 # Run tests
-test: generate fmt vet
+test: build
 	go test ./pkg/... -coverprofile cover.out
+	export LOG_DEVELOPMENT=1;\
+		export LOG_LEVEL=3;\
+		bin/inventory
+
+# Build.
+build: generate fmt vet
+	mkdir -p bin
+	go build -o bin/inventory github.com/konveyor/controller/pkg/cmd/inventory
 
 # Run go fmt against code
 fmt:

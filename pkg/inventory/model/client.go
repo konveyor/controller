@@ -6,7 +6,6 @@ import (
 	"github.com/go-logr/logr"
 	liberr "github.com/konveyor/controller/pkg/error"
 	fb "github.com/konveyor/controller/pkg/filebacked"
-	"github.com/konveyor/controller/pkg/logging"
 	"os"
 	"sync"
 )
@@ -52,7 +51,7 @@ type Client struct {
 	labeler Labeler
 	// The sqlite3 database will not support
 	// concurrent write operations.
-	dbMutex sync.Mutex
+	dbMutex sync.RWMutex
 	// file path.
 	path string
 	// Model
@@ -69,43 +68,28 @@ type Client struct {
 // Create the database.
 // Build the schema to support the specified models.
 // Optionally `purge` (delete) the DB first.
-func (r *Client) Open(purge bool) error {
+func (r *Client) Open(purge bool) (err error) {
 	if purge {
 		_ = os.Remove(r.path)
 	}
-	db, err := sql.Open("sqlite3", r.path)
+	r.db, err = sql.Open("sqlite3", r.path)
 	if err != nil {
 		r.log.V(3).Error(err, "open, failed.")
 		panic(err)
 	}
-	statements := []string{Pragma}
-	r.models = append(r.models, &Label{})
-	for _, m := range r.models {
-		ddl, err := Table{}.DDL(m)
+	defer func() {
 		if err != nil {
-			panic(err)
+			_ = r.db.Close()
+			_ = os.Remove(r.path)
+			r.db = nil
 		}
-		statements = append(statements, ddl...)
-	}
-	for _, ddl := range statements {
-		_, err = db.Exec(ddl)
-		if err != nil {
-			_ = db.Close()
-			return liberr.Wrap(
-				err,
-				"DDL failed.",
-				"ddl",
-				ddl)
-		}
-		r.log.V(4).Info(
-			"DDL executed.",
-			"ddl",
-			ddl)
+	}()
+	err = r.build()
+	if err != nil {
+		panic(err)
 	}
 
 	r.log.V(3).Info("DB opened.")
-
-	r.db = db
 
 	return nil
 }
@@ -127,7 +111,6 @@ func (r *Client) Close(purge bool) error {
 			"path",
 			r.path)
 	}
-	r.db = nil
 	if purge {
 		_ = os.Remove(r.path)
 		r.log.V(3).Info("DB deleted.")
@@ -168,6 +151,8 @@ func (r *Client) Get(model Model) (err error) {
 // List models.
 // The `list` must be: *[]Model.
 func (r *Client) List(list interface{}, options ListOptions) (err error) {
+	r.dbMutex.RLock()
+	defer r.dbMutex.RUnlock()
 	err = Table{r.db}.List(list, options)
 	if err == nil {
 		r.log.V(4).Info(
@@ -182,6 +167,8 @@ func (r *Client) List(list interface{}, options ListOptions) (err error) {
 //
 // List models.
 func (r *Client) Iter(model interface{}, options ListOptions) (itr fb.Iterator, err error) {
+	r.dbMutex.RLock()
+	defer r.dbMutex.RUnlock()
 	itr, err = Table{r.db}.Iter(model, options)
 	if err == nil {
 		r.log.V(4).Info(
@@ -223,15 +210,11 @@ func (r *Client) Begin() (*Tx, error) {
 			"db",
 			r.path)
 	}
-	log := logging.WithName("model|db|tx").WithValues(
-		"db",
-		r.path,
-		"tx",
-		real)
 	tx := &Tx{
+		labeler: r.labeler,
 		dbMutex: &r.dbMutex,
 		journal: &r.journal,
-		log:     log,
+		log:     r.log,
 		real:    real,
 	}
 
@@ -351,11 +334,16 @@ func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) 
 			w = nil
 		}
 	}()
-	itr, err := Table{r.db}.Iter(
-		model,
-		ListOptions{Detail: 1})
+	var itr fb.Iterator
+	func() {
+		r.dbMutex.RLock()
+		defer r.dbMutex.RUnlock()
+		itr, err = Table{r.db}.Iter(
+			model,
+			ListOptions{Detail: 1})
+	}()
 	if err != nil {
-		return nil, err
+		return
 	}
 	list := fb.NewList()
 	for {
@@ -407,11 +395,46 @@ func (r *Client) EndWatch(watch *Watch) {
 }
 
 //
+// Build schema.
+func (r *Client) build() error {
+	statements := []string{
+		Pragma,
+	}
+	r.models = append(r.models, &Label{})
+	for _, m := range r.models {
+		ddl, err := Table{}.DDL(m)
+		if err != nil {
+			return err
+		}
+		statements = append(
+			statements,
+			ddl...)
+	}
+	for _, ddl := range statements {
+		_, err := r.db.Exec(ddl)
+		if err != nil {
+			return liberr.Wrap(
+				err,
+				"DDL failed.",
+				"ddl",
+				ddl)
+		} else {
+			r.log.V(4).Info(
+				"DDL succeeded.",
+				"ddl",
+				ddl)
+		}
+	}
+
+	return nil
+}
+
+//
 // Database transaction.
 type Tx struct {
 	labeler Labeler
 	// Associated client.
-	dbMutex *sync.Mutex
+	dbMutex *sync.RWMutex
 	// Journal
 	journal *Journal
 	// Logger.
@@ -428,7 +451,7 @@ func (r *Tx) Get(model Model) (err error) {
 	err = Table{r.real}.Get(model)
 	if err == nil {
 		r.log.V(4).Info(
-			"get succeeded.",
+			"tx: get succeeded.",
 			"model",
 			Describe(model))
 	}
@@ -443,7 +466,7 @@ func (r *Tx) List(list interface{}, options ListOptions) (err error) {
 	err = Table{r.real}.List(list, options)
 	if err == nil {
 		r.log.V(4).Info(
-			"list succeeded.",
+			"tx: list succeeded.",
 			"options",
 			options)
 	}
@@ -457,7 +480,7 @@ func (r *Tx) Iter(model interface{}, options ListOptions) (itr fb.Iterator, err 
 	itr, err = Table{r.real}.Iter(model, options)
 	if err == nil {
 		r.log.V(4).Info(
-			"iter succeeded",
+			"tx: iter succeeded",
 			"options",
 			options)
 	}
@@ -471,7 +494,7 @@ func (r *Tx) Count(model Model, predicate Predicate) (n int64, err error) {
 	n, err = Table{r.real}.Count(model, predicate)
 	if err == nil {
 		r.log.V(4).Info(
-			"count succeeded.",
+			"tx: count succeeded.",
 			"predicate",
 			predicate)
 	}
@@ -497,7 +520,7 @@ func (r *Tx) Insert(model Model) error {
 	}
 
 	r.log.V(4).Info(
-		"model inserted.",
+		"tx: model inserted.",
 		"model",
 		Describe(model))
 
@@ -533,7 +556,7 @@ func (r *Tx) Update(model Model) error {
 	}
 
 	r.log.V(4).Info(
-		"model updated.",
+		"tx: model updated.",
 		"model",
 		Describe(model))
 
@@ -567,7 +590,7 @@ func (r *Tx) Delete(model Model) error {
 	}
 
 	r.log.V(4).Info(
-		"model deleted.",
+		"tx: model deleted.",
 		"model",
 		Describe(model))
 
@@ -594,7 +617,7 @@ func (r *Tx) Commit() (err error) {
 
 	r.journal.Committed()
 
-	r.log.V(4).Info("tx committed.")
+	r.log.V(4).Info("tx: committed.")
 
 	return
 }
@@ -619,7 +642,7 @@ func (r *Tx) End() (err error) {
 
 	r.journal.Reset()
 
-	r.log.V(4).Info("tx ended.")
+	r.log.V(4).Info("tx: ended.")
 
 	return
 }

@@ -150,62 +150,55 @@ func (r *Event) String() string {
 
 //
 // Watch (event) writer.
+// The writer is model event handler. Each event
+// is send (forwarded) to the watch client.  This
+// provides the bridge between the model and web layer.
 type WatchWriter struct {
 	// negotiated web socket.
 	webSocket *websocket.Conn
-	// model watch.
-	watch *model.Watch
 	// Resource.
 	builder ResourceBuilder
 	// Logger.
 	log logr.Logger
+	// Done.
+	done bool
 }
 
 //
-// End.
-// Close the socket.
-// End the watch.
-// Reset the watch (pointer) to release both
-// objects for garbage collection.
-func (r *WatchWriter) end() {
-	_ = r.webSocket.Close()
-	r.watch.End()
-	r.watch = &model.Watch{}
-	r.log.V(3).Info("watch ended.")
-}
-
-//
-// Write event to the socket.
-func (r *WatchWriter) send(e model.Event) {
-	event := Event{
-		ID:     e.ID,
-		Action: e.Action,
-	}
-	if e.Model != nil {
-		event.Resource = r.builder(e.Model)
-	}
-	if e.Updated != nil {
-		event.Updated = r.builder(e.Updated)
-	}
-	err := r.webSocket.WriteJSON(event)
-	if err != nil {
-		r.log.V(4).Error(err, "websocket send failed.")
-		r.end()
-	}
-
-	r.log.V(5).Info(
-		"event sent.",
-		"event",
-		event)
+// Start the writer.
+// Detect connection closed by peer or broken
+// and end the watch.
+func (r *WatchWriter) Start(watch *model.Watch) {
+	go func() {
+		time.Sleep(time.Second)
+		defer func() {
+			r.log.V(3).Info("stopped.")
+		}()
+		for {
+			event := Event{}
+			err := r.webSocket.ReadJSON(&event)
+			if r.done {
+				return
+			}
+			if err != nil {
+				r.log.V(4).Info(err.Error())
+				watch.End()
+				return
+			}
+			switch event.Action {
+			case model.End:
+				r.log.V(4).Info("ended by peer.")
+				watch.End()
+				return
+			}
+		}
+	}()
 }
 
 //
 // Watch has started.
 func (r *WatchWriter) Started(watchID uint64) {
-	r.log.V(4).Info(
-		"event: started.",
-		"watch",
-		watchID)
+	r.log.V(3).Info("event: started.")
 	r.send(model.Event{
 		ID:     watchID, // send watch ID.
 		Action: model.Started,
@@ -215,7 +208,7 @@ func (r *WatchWriter) Started(watchID uint64) {
 //
 // Watch has parity.
 func (r *WatchWriter) Parity() {
-	r.log.V(4).Info("event: parity.")
+	r.log.V(3).Info("event: parity.")
 	r.send(model.Event{
 		Action: model.Parity,
 	})
@@ -254,7 +247,7 @@ func (r *WatchWriter) Deleted(event model.Event) {
 //
 // An error has occurred delivering an event.
 func (r *WatchWriter) Error(err error) {
-	r.log.V(4).Info(
+	r.log.V(3).Info(
 		"event: error",
 		"error",
 		err.Error())
@@ -266,10 +259,40 @@ func (r *WatchWriter) Error(err error) {
 //
 // An event watch has ended.
 func (r *WatchWriter) End() {
-	r.log.V(4).Info("event: ended.")
+	r.log.V(3).Info("event: ended.")
 	r.send(model.Event{
 		Action: model.End,
 	})
+	r.done = true
+	time.Sleep(50 * time.Millisecond)
+	_ = r.webSocket.Close()
+}
+
+//
+// Write event to the socket.
+func (r *WatchWriter) send(e model.Event) {
+	if r.done {
+		return
+	}
+	event := Event{
+		ID:     e.ID,
+		Action: e.Action,
+	}
+	if e.Model != nil {
+		event.Resource = r.builder(e.Model)
+	}
+	if e.Updated != nil {
+		event.Updated = r.builder(e.Updated)
+	}
+	err := r.webSocket.WriteJSON(event)
+	if err != nil {
+		r.log.V(4).Error(err, "websocket send failed.")
+	}
+
+	r.log.V(5).Info(
+		"event sent.",
+		"event",
+		event)
 }
 
 //
@@ -307,28 +330,33 @@ func (r *Watched) Watch(
 			ctx.Request.URL)
 		return
 	}
-	wlog := logging.WithName("web|watch|writer").WithValues(
-		"peer",
-		socket.RemoteAddr(),
-		"model",
-		ref.ToKind(m))
+	name := "web|watch|writer"
 	writer := &WatchWriter{
 		webSocket: socket,
 		builder:   rb,
-		log:       wlog,
+		log: logging.WithName(name).WithValues(
+			"peer",
+			socket.RemoteAddr()),
 	}
 	watch, err := db.Watch(m, writer)
 	if err != nil {
 		_ = socket.Close()
 		return
 	}
+	writer.log = logging.WithName(name).WithValues(
+		"peer",
+		socket.RemoteAddr(),
+		"watch",
+		watch.String())
 
-	writer.watch = watch
+	writer.Start(watch)
 
 	log.V(3).Info(
 		"handler: watch created.",
 		"url",
-		ctx.Request.URL)
+		ctx.Request.URL,
+		"watch",
+		watch.String())
 
 	return
 }

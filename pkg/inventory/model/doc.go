@@ -107,7 +107,9 @@
 //
 package model
 
-import "github.com/konveyor/controller/pkg/logging"
+import (
+	"github.com/konveyor/controller/pkg/logging"
+)
 
 //
 // New database.
