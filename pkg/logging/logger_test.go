@@ -83,10 +83,11 @@ func TestReal(t *testing.T) {
 	//
 	// Real
 	log := WithName("Test")
+	log = log.WithValues("name", "john")
 	log.Info("hello")
 	log.Error(errors.New("A"), "thing failed")
-	log.Trace(errors.New("B"))
-	g.Expect(log.name).To(gomega.Equal("Test"))
+	log.(*Logger).Trace(errors.New("B"))
+	g.Expect(log.(*Logger).name).To(gomega.Equal("Test"))
 }
 
 func TestFake(t *testing.T) {
@@ -94,7 +95,7 @@ func TestFake(t *testing.T) {
 
 	Factory = &fakeBuilder{}
 
-	log := WithName("Test")
+	log := WithName("Test").(*Logger)
 	f := log.Real.(*fake)
 	g.Expect(f.name).To(gomega.Equal("Test"))
 	// Info
@@ -150,7 +151,7 @@ func TestFake(t *testing.T) {
 	// Levels.
 	// level-1
 	Settings.Level = 0
-	log = WithName("level-testing")
+	log = WithName("level-testing").(*Logger)
 	log0 := log.V(0)
 	g.Expect(log0.(*Logger).Real.(*fake).debug).To(gomega.BeFalse())
 	log0.Info("Test-0")
@@ -160,7 +161,7 @@ func TestFake(t *testing.T) {
 	g.Expect(len(log1.(*Logger).Real.(*fake).entry)).To(gomega.Equal(0))
 	// level-4
 	Settings.Level = Settings.DebugThreshold
-	log = WithName("level-testing")
+	log = WithName("level-testing").(*Logger)
 	log0 = log.V(2)
 	g.Expect(log0.(*Logger).Real.(*fake).debug).To(gomega.BeFalse())
 	log0.Info("Test-0")
@@ -176,7 +177,7 @@ func TestFake(t *testing.T) {
 	// level-1
 	err := liberr.New("")
 	Settings.Level = 0
-	log = WithName("level-testing")
+	log = WithName("level-testing").(*Logger)
 	log0 = log.V(0)
 	g.Expect(log0.(*Logger).Real.(*fake).debug).To(gomega.BeFalse())
 	log0.Error(err, "Test-0")
@@ -186,7 +187,7 @@ func TestFake(t *testing.T) {
 	g.Expect(len(log1.(*Logger).Real.(*fake).entry)).To(gomega.Equal(0))
 	// level-4
 	Settings.Level = Settings.DebugThreshold
-	log = WithName("level-testing")
+	log = WithName("level-testing").(*Logger)
 	log0 = log.V(2)
 	g.Expect(log0.(*Logger).Real.(*fake).debug).To(gomega.BeFalse())
 	log0.Error(err, "Test-0")

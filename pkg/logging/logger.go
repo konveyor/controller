@@ -50,7 +50,7 @@ type Logger struct {
 
 //
 // Get a named logger.
-func WithName(name string, kvpair ...interface{}) *Logger {
+func WithName(name string, kvpair ...interface{}) logr.Logger {
 	l := &Logger{
 		Real: Factory.New(),
 		name: name,
