@@ -8,6 +8,7 @@ import (
 	fb "github.com/konveyor/controller/pkg/filebacked"
 	"os"
 	"sync"
+	"time"
 )
 
 const (
@@ -136,12 +137,15 @@ func (r *Client) Execute(sql string) (sql.Result, error) {
 //
 // Get the model.
 func (r *Client) Get(model Model) (err error) {
+	mark := time.Now()
 	err = Table{r.db}.Get(model)
 	if err == nil {
 		r.log.V(4).Info(
 			"get succeeded.",
 			"model",
-			Describe(model))
+			Describe(model),
+			"duration",
+			time.Since(mark))
 	}
 
 	return
@@ -151,6 +155,7 @@ func (r *Client) Get(model Model) (err error) {
 // List models.
 // The `list` must be: *[]Model.
 func (r *Client) List(list interface{}, options ListOptions) (err error) {
+	mark := time.Now()
 	r.dbMutex.RLock()
 	defer r.dbMutex.RUnlock()
 	err = Table{r.db}.List(list, options)
@@ -158,7 +163,8 @@ func (r *Client) List(list interface{}, options ListOptions) (err error) {
 		r.log.V(4).Info(
 			"list succeeded.",
 			"options",
-			options)
+			"duration",
+			time.Since(mark))
 	}
 
 	return
@@ -167,6 +173,7 @@ func (r *Client) List(list interface{}, options ListOptions) (err error) {
 //
 // List models.
 func (r *Client) Iter(model interface{}, options ListOptions) (itr fb.Iterator, err error) {
+	mark := time.Now()
 	r.dbMutex.RLock()
 	defer r.dbMutex.RUnlock()
 	itr, err = Table{r.db}.Iter(model, options)
@@ -174,7 +181,9 @@ func (r *Client) Iter(model interface{}, options ListOptions) (itr fb.Iterator, 
 		r.log.V(4).Info(
 			"iter succeeded",
 			"options",
-			options)
+			options,
+			"duration",
+			time.Since(mark))
 	}
 
 	return
@@ -183,12 +192,15 @@ func (r *Client) Iter(model interface{}, options ListOptions) (itr fb.Iterator, 
 //
 // Count models.
 func (r *Client) Count(model Model, predicate Predicate) (n int64, err error) {
+	mark := time.Now()
 	n, err = Table{r.db}.Count(model, predicate)
 	if err == nil {
 		r.log.V(4).Info(
 			"count succeeded.",
 			"predicate",
-			predicate)
+			predicate,
+			"duration",
+			time.Since(mark))
 	}
 	return
 }
@@ -202,6 +214,7 @@ func (r *Client) Count(model Model, predicate Predicate) (n int64, err error) {
 //   client.Insert(model)
 //   tx.Commit()
 func (r *Client) Begin() (*Tx, error) {
+	mark := time.Now()
 	r.dbMutex.Lock()
 	real, err := r.db.Begin()
 	if err != nil {
@@ -214,11 +227,12 @@ func (r *Client) Begin() (*Tx, error) {
 		labeler: r.labeler,
 		dbMutex: &r.dbMutex,
 		journal: &r.journal,
+		started: time.Now(),
 		log:     r.log,
 		real:    real,
 	}
 
-	r.log.V(4).Info("tx begin.")
+	r.log.V(4).Info("tx begin.", "duration", time.Since(mark))
 
 	return tx, nil
 }
@@ -226,6 +240,7 @@ func (r *Client) Begin() (*Tx, error) {
 //
 // Insert the model.
 func (r *Client) Insert(model Model) error {
+	mark := time.Now()
 	r.dbMutex.Lock()
 	defer r.dbMutex.Unlock()
 	table := Table{r.db}
@@ -245,7 +260,9 @@ func (r *Client) Insert(model Model) error {
 	r.log.V(4).Info(
 		"model inserted.",
 		"model",
-		Describe(model))
+		Describe(model),
+		"duration",
+		time.Since(mark))
 
 	return nil
 }
@@ -253,6 +270,7 @@ func (r *Client) Insert(model Model) error {
 //
 // Update the model.
 func (r *Client) Update(model Model) error {
+	mark := time.Now()
 	r.dbMutex.Lock()
 	defer r.dbMutex.Unlock()
 	table := Table{r.db}
@@ -280,7 +298,9 @@ func (r *Client) Update(model Model) error {
 	r.log.V(4).Info(
 		"model updated.",
 		"model",
-		Describe(model))
+		Describe(model),
+		"duration",
+		time.Since(mark))
 
 	return nil
 }
@@ -288,6 +308,7 @@ func (r *Client) Update(model Model) error {
 //
 // Delete the model.
 func (r *Client) Delete(model Model) error {
+	mark := time.Now()
 	r.dbMutex.Lock()
 	defer r.dbMutex.Unlock()
 	table := Table{r.db}
@@ -316,7 +337,9 @@ func (r *Client) Delete(model Model) error {
 	r.log.V(4).Info(
 		"model deleted.",
 		"model",
-		Describe(model))
+		Describe(model),
+		"duration",
+		time.Since(mark))
 
 	return nil
 }
@@ -326,6 +349,7 @@ func (r *Client) Delete(model Model) error {
 func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) {
 	r.dbMutex.RLock()
 	defer r.dbMutex.RUnlock()
+	mark := time.Now()
 	w, err = r.journal.Watch(model, handler)
 	if err != nil {
 		return
@@ -354,7 +378,9 @@ func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) 
 		"model",
 		Describe(model),
 		"options",
-		options)
+		options,
+		"duration",
+		time.Since(mark))
 
 	return
 }
@@ -416,6 +442,8 @@ type Tx struct {
 	log logr.Logger
 	// Reference to real sql.Tx.
 	real *sql.Tx
+	// Mark.
+	started time.Time
 	// Ended
 	ended bool
 }
@@ -584,6 +612,7 @@ func (r *Tx) Commit() (err error) {
 		r.dbMutex.Unlock()
 		r.ended = true
 	}()
+	mark := time.Now()
 	err = r.real.Commit()
 	if err != nil {
 		err = liberr.Wrap(err)
@@ -592,7 +621,12 @@ func (r *Tx) Commit() (err error) {
 
 	r.journal.Committed()
 
-	r.log.V(4).Info("tx: committed.")
+	r.log.V(4).Info(
+		"tx: committed.",
+		"lifespan",
+		time.Since(r.started),
+		"duration",
+		time.Since(mark))
 
 	return
 }
