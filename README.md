@@ -17,9 +17,8 @@ Verbosity:
 
 Package:
 - filebacked:
-  - Info(3): none.
-  - Info(4): none.
-  - Info(5): file create,delete,read,write.
+  - Info(5): file create,delete
+  - Info(6): file read,write.
 - inventory:
   - container:
     - Info(3): reconciler lifecycle.
@@ -34,6 +33,7 @@ Package:
       - watch: lifecycle.
     - Info(5):
       - watch: event sent,received.
+      - table: SQL statements.
   - web:
     - Info(3):
       - watch: lifecycle.
