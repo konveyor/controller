@@ -69,8 +69,18 @@ func (r *Event) String() string {
 }
 
 //
+// Watch options.
+type WatchOptions struct {
+	// Initial snapshot.
+	// List models and report as `Created` events.
+	Snapshot bool
+}
+
+//
 // Event handler.
 type EventHandler interface {
+	// Watch options.
+	Options() WatchOptions
 	// Watch has started.
 	Started(watchID uint64)
 	// Parity marker.
@@ -156,7 +166,7 @@ func (w *Watch) notify(itr fb.Iterator) {
 //
 // Run the watch.
 // Forward events to the `handler`.
-func (w *Watch) Start() {
+func (w *Watch) Start(snapshot fb.Iterator) {
 	if w.started {
 		return
 	}
@@ -169,15 +179,33 @@ func (w *Watch) Start() {
 			w.Handler.End()
 			w.log.V(3).Info("watch stopped.")
 		}()
-		count := 0
+		for {
+			m, hasNext, err := snapshot.Next()
+			if err != nil {
+				w.log.Error(err, "next() failed.")
+				w.Handler.Error(err)
+				return
+			}
+			if hasNext {
+				w.Handler.Created(
+					Event{
+						Action: Created,
+						Model:  m.(Model),
+					})
+			} else {
+				w.log.V(3).Info("has parity.")
+				w.Handler.Parity()
+				break
+			}
+		}
 		for itr := range w.queue {
 			for {
 				event := Event{}
 				event, hasNext, err := w.next(itr)
 				if err != nil {
-					w.log.V(3).Error(err, "next() failed.")
+					w.log.Error(err, "next() failed.")
 					w.Handler.Error(err)
-					break
+					return
 				}
 				if !hasNext {
 					break
@@ -197,13 +225,11 @@ func (w *Watch) Start() {
 				case Deleted:
 					w.Handler.Deleted(event)
 				default:
-					w.Handler.Error(liberr.New("unknown action"))
+					w.log.Info(
+						"unknown action.",
+						"event",
+						event.String())
 				}
-			}
-			count++
-			if count == 1 {
-				w.log.V(3).Info("has parity.")
-				w.Handler.Parity()
 			}
 		}
 	}
@@ -520,6 +546,11 @@ func (r *Journal) hasWatch(model Model) bool {
 // Stock event handler.
 // Provides default event methods.
 type StockEventHandler struct{}
+
+// Watch options.
+func (r *StockEventHandler) Options() WatchOptions {
+	return WatchOptions{}
+}
 
 //
 // Watch has started.

@@ -154,7 +154,9 @@ func (r *Event) String() string {
 // is send (forwarded) to the watch client.  This
 // provides the bridge between the model and web layer.
 type WatchWriter struct {
-	// negotiated web socket.
+	// Watch options.
+	options model.WatchOptions
+	// Negotiated web socket.
 	webSocket *websocket.Conn
 	// Resource.
 	builder ResourceBuilder
@@ -162,6 +164,12 @@ type WatchWriter struct {
 	log logr.Logger
 	// Done.
 	done bool
+}
+
+//
+// Watch options.
+func (r *WatchWriter) Options() model.WatchOptions {
+	return r.options
 }
 
 //
@@ -298,14 +306,26 @@ func (r *WatchWriter) send(e model.Event) {
 //
 // Watched (handler).
 type Watched struct {
+	// Watch requested.
 	WatchRequest bool
+	// Watch options.
+	options model.WatchOptions
 }
 
 //
 // Prepare the handler to fulfil the request.
-// Set the `HasWatch` field using passed headers.
+// Set the `WatchRequest` and `snapshot` fields based on passed headers.
+// The header value is a list of options.
 func (h *Watched) Prepare(ctx *gin.Context) int {
-	_, h.WatchRequest = ctx.Request.Header[WatchHeader]
+	header, found := ctx.Request.Header[WatchHeader]
+	h.WatchRequest = found
+	for _, option := range header {
+		switch option {
+		case WatchSnapshot:
+			h.options.Snapshot = true
+		}
+	}
+
 	return http.StatusOK
 }
 
@@ -332,6 +352,7 @@ func (r *Watched) Watch(
 	}
 	name := "web|watch|writer"
 	writer := &WatchWriter{
+		options:   r.options,
 		webSocket: socket,
 		builder:   rb,
 		log: logging.WithName(name).WithValues(

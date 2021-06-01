@@ -324,6 +324,8 @@ func (r *Client) Delete(model Model) error {
 //
 // Watch model events.
 func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) {
+	r.dbMutex.RLock()
+	defer r.dbMutex.RUnlock()
 	w, err = r.journal.Watch(model, handler)
 	if err != nil {
 		return
@@ -334,52 +336,25 @@ func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) 
 			w = nil
 		}
 	}()
-	var itr fb.Iterator
-	func() {
-		r.dbMutex.RLock()
-		defer r.dbMutex.RUnlock()
-		itr, err = Table{r.db}.Iter(
-			model,
-			ListOptions{Detail: 1})
-	}()
-	if err != nil {
-		return
+	options := handler.Options()
+	var snapshot fb.Iterator
+	if options.Snapshot {
+		snapshot, err = Table{r.db}.Iter(model, ListOptions{Detail: 1})
+		if err != nil {
+			return
+		}
+	} else {
+		snapshot = &fb.EmptyIterator{}
 	}
-	list := fb.NewList()
-	for {
-		model, hasNext, mErr := itr.Next()
-		if mErr != nil {
-			err = mErr
-			return
-		}
-		if !hasNext {
-			break
-		}
-		// Event.
-		event := &Event{
-			Action: Created,
-		}
-		mErr = list.Append(event)
-		if mErr != nil {
-			err = mErr
-			return
-		}
-		// Model.
-		mErr = list.Append(model)
-		if mErr != nil {
-			err = mErr
-			return
-		}
-	}
-	w.notify(list.Iter())
-	w.Start()
+
+	w.Start(snapshot)
 
 	r.log.V(4).Info(
 		"watch started.",
 		"model",
 		Describe(model),
-		"count",
-		itr.Len())
+		"options",
+		options)
 
 	return
 }

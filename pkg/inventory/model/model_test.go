@@ -63,6 +63,7 @@ type TestEvent struct {
 }
 
 type TestHandler struct {
+	options WatchOptions
 	name    string
 	started bool
 	parity  bool
@@ -72,6 +73,10 @@ type TestHandler struct {
 	deleted []int
 	err     []error
 	done    bool
+}
+
+func (w *TestHandler) Options() WatchOptions {
+	return w.options
 }
 
 func (w *TestHandler) Started(uint64) {
@@ -111,12 +116,17 @@ func (w *TestHandler) End() {
 }
 
 type MutatingHandler struct {
+	options WatchOptions
 	DB
 	name    string
 	started bool
 	parity  bool
 	created []int
 	updated []int
+}
+
+func (w *MutatingHandler) Options() WatchOptions {
+	return w.options
 }
 
 func (w *MutatingHandler) Started(uint64) {
@@ -538,7 +548,10 @@ func TestWatch(t *testing.T) {
 	}()
 	g.Expect(err).To(gomega.BeNil())
 	// Handler A
-	handlerA := &TestHandler{name: "A"}
+	handlerA := &TestHandler{
+		options: WatchOptions{Snapshot: true},
+		name:    "A",
+	}
 	watchA, err := DB.Watch(&TestObject{}, handlerA)
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(watchA).ToNot(gomega.BeNil())
@@ -554,7 +567,10 @@ func TestWatch(t *testing.T) {
 		g.Expect(err).To(gomega.BeNil())
 	}
 	// Handler B
-	handlerB := &TestHandler{name: "B"}
+	handlerB := &TestHandler{
+		options: WatchOptions{Snapshot: true},
+		name:    "B",
+	}
 	watchB, err := DB.Watch(&TestObject{}, handlerB)
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(watchB).ToNot(gomega.BeNil())
@@ -580,8 +596,16 @@ func TestWatch(t *testing.T) {
 		g.Expect(err).To(gomega.BeNil())
 	}
 	// Handler C
-	handlerC := &TestHandler{name: "C"}
+	handlerC := &TestHandler{
+		options: WatchOptions{Snapshot: true},
+		name:    "C",
+	}
 	watchC, err := DB.Watch(&TestObject{}, handlerC)
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(watchC).ToNot(gomega.BeNil())
+	// Handler D (no snapshot)
+	handlerD := &TestHandler{name: "D"}
+	watchD, err := DB.Watch(&TestObject{}, handlerD)
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(watchC).ToNot(gomega.BeNil())
 	// Delete
@@ -610,9 +634,11 @@ func TestWatch(t *testing.T) {
 	g.Expect(handlerA.started).To(gomega.BeTrue())
 	g.Expect(handlerB.started).To(gomega.BeTrue())
 	g.Expect(handlerC.started).To(gomega.BeTrue())
+	g.Expect(handlerD.started).To(gomega.BeTrue())
 	g.Expect(handlerA.parity).To(gomega.BeTrue())
 	g.Expect(handlerB.parity).To(gomega.BeTrue())
 	g.Expect(handlerC.parity).To(gomega.BeTrue())
+	g.Expect(handlerD.parity).To(gomega.BeTrue())
 	//
 	// The scenario is:
 	// 1. handler A created
@@ -622,8 +648,34 @@ func TestWatch(t *testing.T) {
 	// 5. Handler C created.  handler C should get (N) CREATE events.
 	// 6. (N) models deleted. handler A,B,C should get (N) DELETE events.
 	all := []TestEvent{}
+	created := []TestEvent{}
+	updated := []TestEvent{}
+	deleted := []TestEvent{}
 	for _, action := range []uint8{Created, Updated, Deleted} {
 		for i := 0; i < N; i++ {
+			switch action {
+			case Created:
+				created = append(
+					created,
+					TestEvent{
+						action: action,
+						model:  &TestObject{ID: i},
+					})
+			case Updated:
+				updated = append(
+					updated,
+					TestEvent{
+						action: action,
+						model:  &TestObject{ID: i},
+					})
+			case Deleted:
+				deleted = append(
+					deleted,
+					TestEvent{
+						action: action,
+						model:  &TestObject{ID: i},
+					})
+			}
 			all = append(
 				all,
 				TestEvent{
@@ -682,15 +734,28 @@ func TestWatch(t *testing.T) {
 		}
 		return true
 	}()).To(gomega.BeTrue())
+	g.Expect(func() (eq bool) {
+		h := handlerD
+		if len(deleted) != len(h.deleted) {
+			return
+		}
+		for i := 0; i < len(deleted); i++ {
+			if deleted[i].model.ID != h.deleted[i] {
+				return
+			}
+		}
+		return true
+	}()).To(gomega.BeTrue())
 
 	//
 	// Test watch end.
 	watchA.End()
 	watchB.End()
 	watchC.End()
+	watchD.End()
 	ended := false
 	for i := 0; i < 10; i++ {
-		if watchA.started || watchB.started || watchC.started {
+		if watchA.started || watchB.started || watchC.started || watchD.started {
 			time.Sleep(50 * time.Millisecond)
 		} else {
 			ended = true
@@ -702,6 +767,7 @@ func TestWatch(t *testing.T) {
 	g.Expect(handlerA.done).To(gomega.BeTrue())
 	g.Expect(handlerB.done).To(gomega.BeTrue())
 	g.Expect(handlerC.done).To(gomega.BeTrue())
+	g.Expect(handlerD.done).To(gomega.BeTrue())
 }
 
 func TestCloseDB(t *testing.T) {
@@ -712,7 +778,10 @@ func TestCloseDB(t *testing.T) {
 		_ = DB.Close(false)
 	}()
 	g.Expect(err).To(gomega.BeNil())
-	handler := &TestHandler{name: "A"}
+	handler := &TestHandler{
+		options: WatchOptions{Snapshot: true},
+		name:    "A",
+	}
 	watch, err := DB.Watch(&TestObject{}, handler)
 	for i := 0; i < 10; i++ {
 		if !watch.started {
@@ -744,16 +813,18 @@ func TestMutatingWatch(t *testing.T) {
 
 	// Handler A
 	handlerA := &MutatingHandler{
-		name: "A",
-		DB:   DB,
+		options: WatchOptions{Snapshot: true},
+		name:    "A",
+		DB:      DB,
 	}
 	watchA, err := DB.Watch(&TestObject{}, handlerA)
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(watchA).ToNot(gomega.BeNil())
 	// Handler B
 	handlerB := &MutatingHandler{
-		name: "A",
-		DB:   DB,
+		options: WatchOptions{Snapshot: true},
+		name:    "B",
+		DB:      DB,
 	}
 	watchB, err := DB.Watch(&TestObject{}, handlerB)
 	g.Expect(err).To(gomega.BeNil())
