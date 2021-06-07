@@ -20,7 +20,9 @@ import (
 //
 // Header.
 const (
-	WatchHeader   = "X-Watch"
+	// Watch requested.
+	WatchHeader = "X-Watch"
+	// Options.
 	WatchSnapshot = "snapshot"
 )
 
@@ -104,6 +106,10 @@ type Client struct {
 	Transport http.RoundTripper
 	// Headers.
 	Header http.Header
+	// Reply.
+	Reply struct {
+		Header http.Header
+	}
 }
 
 //
@@ -140,10 +146,10 @@ func (r *Client) Get(url string, out interface{}, params ...Param) (status int, 
 			url)
 		return
 	}
+	r.Reply.Header = response.Header
 	defer func() {
 		_ = response.Body.Close()
 	}()
-	r.Header = response.Header
 	content, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		err = liberr.Wrap(
@@ -199,6 +205,7 @@ func (r *Client) Post(url string, in interface{}, out interface{}) (status int, 
 			url)
 		return
 	}
+	r.Reply.Header = response.Header
 	defer func() {
 		_ = response.Body.Close()
 	}()
