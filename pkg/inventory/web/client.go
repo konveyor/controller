@@ -20,12 +20,17 @@ import (
 //
 // Header.
 const (
-	WatchHeader = "X-Watch"
+	WatchHeader   = "X-Watch"
+	WatchSnapshot = "snapshot"
 )
+
+type WatchOptions = libmodel.WatchOptions
 
 //
 // Event handler
 type EventHandler interface {
+	// Watch options.
+	Options() WatchOptions
 	// The watch has started.
 	Started(uint64)
 	// Parity marker.
@@ -50,6 +55,12 @@ type EventHandler interface {
 // Stock event handler.
 // Provides default event methods.
 type StockEventHandler struct{}
+
+//
+// Watch options.
+func (r *StockEventHandler) Options() WatchOptions {
+	return WatchOptions{}
+}
 
 //
 // Watch has started.
@@ -132,6 +143,7 @@ func (r *Client) Get(url string, out interface{}, params ...Param) (status int, 
 	defer func() {
 		_ = response.Body.Close()
 	}()
+	r.Header = response.Header
 	content, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		err = liberr.Wrap(
@@ -220,11 +232,7 @@ func (r *Client) Post(url string, in interface{}, out interface{}) (status int, 
 
 //
 // Watch a resource.
-func (r *Client) Watch(
-	url string,
-	resource interface{},
-	handler EventHandler) (status int, w *Watch, err error) {
-	//
+func (r *Client) Watch(url string, resource interface{}, h EventHandler) (status int, w *Watch, err error) {
 	url = r.patchURL(url)
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 45 * time.Second,
@@ -233,8 +241,12 @@ func (r *Client) Watch(
 	if ht, cast := r.Transport.(*http.Transport); cast {
 		dialer.TLSClientConfig = ht.TLSClientConfig
 	}
+	options := []string{""}
+	if h.Options().Snapshot {
+		options = []string{WatchSnapshot}
+	}
 	header := http.Header{
-		WatchHeader: []string{"1"},
+		WatchHeader: options,
 	}
 	for k, v := range r.Header {
 		header[k] = v
@@ -266,7 +278,7 @@ func (r *Client) Watch(
 	}
 	reader := &WatchReader{
 		resource: resource,
-		handler:  handler,
+		handler:  h,
 		repair:   post,
 	}
 	status, err = post(reader)

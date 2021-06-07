@@ -51,6 +51,7 @@ func (m *Model) Labels() model.Labels {
 //
 // Watch (event) handler.
 type EventHandler struct {
+	options web.WatchOptions
 	name    string
 	started bool
 	parity  bool
@@ -60,6 +61,10 @@ type EventHandler struct {
 	err     []error
 	done    bool
 	wid     uint64
+}
+
+func (h *EventHandler) Options() web.WatchOptions {
+	return h.options
 }
 
 func (h *EventHandler) Started(wid uint64) {
@@ -116,7 +121,7 @@ type Endpoint struct {
 	db model.DB
 }
 
-func (h *Endpoint) Get(ctx *gin.Context) {
+func (h Endpoint) Get(ctx *gin.Context) {
 	id, _ := strconv.Atoi(ctx.Query("id"))
 	m := &Model{ID: id}
 	err := h.db.Get(m)
@@ -132,7 +137,7 @@ func (h *Endpoint) Get(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, m)
 }
 
-func (h *Endpoint) List(ctx *gin.Context) {
+func (h Endpoint) List(ctx *gin.Context) {
 	// Watch request.
 	h.Watched.Prepare(ctx)
 	if h.WatchRequest {
@@ -272,11 +277,15 @@ func get(client *web.Client) {
 	fmt.Printf("\nGet: %v\n", m)
 }
 
-func watch(client *web.Client) (watch *web.Watch) {
+func watch(client *web.Client, snapshot bool) (watch *web.Watch) {
 	status, watch, err := client.Watch(
 		"http://localhost:7001/models",
 		&Model{},
-		&EventHandler{})
+		&EventHandler{
+			options: web.WatchOptions{
+				Snapshot: snapshot,
+			},
+		})
 	if err != nil {
 		panic(err)
 	}
@@ -284,7 +293,7 @@ func watch(client *web.Client) (watch *web.Watch) {
 		panic(liberr.New(http.StatusText(status)))
 	}
 
-	fmt.Printf("\nWatch started: %d\n", watch.ID())
+	fmt.Printf("\nWatch started: %d  (snapshot=%v)\n", watch.ID(), snapshot)
 
 	return
 }
@@ -302,7 +311,7 @@ func wait(d time.Duration) {
 //
 // Basic test.
 func testA(client *web.Client) {
-	w := watch(client)
+	w := watch(client, true)
 	get(client)
 	list(client)
 	endWatch(w)
@@ -313,7 +322,7 @@ func testA(client *web.Client) {
 // Test client watch normal lifecycle.
 func testB(client *web.Client, n int) {
 	for i := 0; i < n; i++ {
-		w := watch(client)
+		w := watch(client, true)
 		wait(500)
 		endWatch(w)
 	}
@@ -323,7 +332,7 @@ func testB(client *web.Client, n int) {
 // Test watch client finalizer.
 func testC(client *web.Client, n int) {
 	for i := 0; i < n; i++ {
-		w := watch(client)
+		w := watch(client, true)
 		fmt.Println(w.ID())
 		wait(500)
 		w = nil
@@ -333,9 +342,29 @@ func testC(client *web.Client, n int) {
 }
 
 //
-// Test close Db.
+// Watch no snapshot
 func testD(db model.DB, client *web.Client) {
-	w := watch(client)
+	w := watch(client, false)
+	for i := 20; i < 25; i++ {
+		err := db.Insert(
+			&Model{
+				ID:   i,
+				Name: fmt.Sprintf("m-%.4d", i),
+				Age:  i + 10,
+			})
+		if err != nil {
+			panic(err)
+		}
+	}
+	wait(100)
+	endWatch(w)
+	wait(500)
+}
+
+//
+// Test close Db.
+func testE(db model.DB, client *web.Client) {
+	w := watch(client, true)
 	wait(100)
 	fmt.Println(w.ID())
 	_ = db.Close(false)
@@ -358,5 +387,6 @@ func main() {
 	testB(client, n)
 	testC(client, n)
 	testD(db, client)
+	testE(db, client)
 	wait(500)
 }
