@@ -66,7 +66,7 @@ func (w *Writer) Append(object interface{}) (err error) {
 	// Write entry.
 	err = w.writeEntry(kind, bfr)
 
-	log.V(5).Info(
+	log.V(6).Info(
 		"writer: appended object.",
 		"path",
 		w.path,
@@ -184,7 +184,7 @@ func (w *Writer) writeEntry(kind uint16, bfr bytes.Buffer) (err error) {
 		err = liberr.Wrap(err)
 		return
 	}
-	log.V(5).Info(
+	log.V(6).Info(
 		"writer: write entry.",
 		"path",
 		w.path,
@@ -287,7 +287,7 @@ func (r *Reader) NextWith(object interface{}) (hasNext bool, err error) {
 		err = liberr.Wrap(err)
 		return
 	}
-	log.V(5).Info(
+	log.V(6).Info(
 		"reader: read (with) next.",
 		"path",
 		r.path,
@@ -329,7 +329,7 @@ func (r *Reader) Next() (object interface{}, hasNext bool, err error) {
 		err = liberr.Wrap(err)
 		return
 	}
-	log.V(5).Info(
+	log.V(6).Info(
 		"reader: read next.",
 		"path",
 		r.path,
