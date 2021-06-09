@@ -7,6 +7,7 @@ import (
 	liberr "github.com/konveyor/controller/pkg/error"
 	fb "github.com/konveyor/controller/pkg/filebacked"
 	"os"
+	"path"
 	"sync"
 )
 
@@ -640,6 +641,10 @@ func (r *Labeler) Insert(table Table, model Model) error {
 			Name:   l,
 			Value:  v,
 		}
+		label.PK = path.Join(
+			label.Parent,
+			label.Kind,
+			label.Name)
 		err := table.Insert(label)
 		if err != nil {
 			return err

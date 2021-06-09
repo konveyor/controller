@@ -6,6 +6,7 @@ import (
 	"github.com/konveyor/controller/pkg/ref"
 	"github.com/onsi/gomega"
 	"math"
+	"path"
 	"testing"
 	"time"
 )
@@ -22,8 +23,7 @@ type TestBase struct {
 type TestObject struct {
 	TestBase
 	RowID  int64          `sql:"virtual"`
-	PK     string         `sql:"pk,generated(id)"`
-	ID     int            `sql:"key"`
+	ID     int            `sql:"pk"`
 	Name   string         `sql:"index(a)"`
 	Age    int            `sql:"index(a)"`
 	Int8   int8           `sql:""`
@@ -38,7 +38,7 @@ type TestObject struct {
 }
 
 func (m *TestObject) Pk() string {
-	return fmt.Sprintf("%s", m.PK)
+	return fmt.Sprintf("%d", m.ID)
 }
 
 func (m *TestObject) String() string {
@@ -195,7 +195,6 @@ func TestCRUD(t *testing.T) {
 		},
 	}
 	assertEqual := func(a, b *TestObject) {
-		g.Expect(a.PK).To(gomega.Equal(b.PK))
 		g.Expect(a.ID).To(gomega.Equal(b.ID))
 		g.Expect(a.Name).To(gomega.Equal(b.Name))
 		g.Expect(a.Age).To(gomega.Equal(b.Age))
@@ -208,9 +207,10 @@ func TestCRUD(t *testing.T) {
 		g.Expect(a.Map).To(gomega.Equal(b.Map))
 		for k, v := range objA.labels {
 			l := &Label{
-				Kind:   ref.ToKind(a),
-				Parent: a.PK,
-				Name:   k,
+				PK: path.Join(
+					a.Pk(),
+					ref.ToKind(a),
+					k),
 			}
 			g.Expect(DB.Get(l)).To(gomega.BeNil())
 			g.Expect(v).To(gomega.Equal(l.Value))
@@ -414,7 +414,7 @@ func TestList(t *testing.T) {
 			Predicate: Gt("RowID", N/2),
 		})
 	g.Expect(err).To(gomega.BeNil())
-	g.Expect(len(list)).To(gomega.Equal(N / 2))
+	g.Expect(len(list)).To(gomega.Equal((N / 2) - 1))
 	g.Expect(list[0].RowID).To(gomega.Equal(int64(N/2) + 1))
 	// List (Eq) Field values.
 	list = []TestObject{}
@@ -452,7 +452,7 @@ func TestList(t *testing.T) {
 			Predicate: Gt("RowID", Field{Name: "int8"}),
 		})
 	g.Expect(err).To(gomega.BeNil())
-	g.Expect(len(list)).To(gomega.Equal(2))
+	g.Expect(len(list)).To(gomega.Equal(1))
 	// By label.
 	list = []TestObject{}
 	err = DB.List(

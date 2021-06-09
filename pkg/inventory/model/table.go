@@ -2,10 +2,7 @@ package model
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"database/sql"
-	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -332,7 +329,6 @@ func (t Table) Insert(model interface{}) error {
 	if err != nil {
 		return err
 	}
-	_ = t.SetPk(fields)
 	stmt, err := t.insertSQL(t.Name(model), fields)
 	if err != nil {
 		return err
@@ -370,7 +366,6 @@ func (t Table) Update(model interface{}) error {
 	if err != nil {
 		return err
 	}
-	_ = t.SetPk(fields)
 	stmt, err := t.updateSQL(t.Name(model), fields)
 	if err != nil {
 		return err
@@ -406,7 +401,6 @@ func (t Table) Delete(model interface{}) error {
 	if err != nil {
 		return err
 	}
-	_ = t.SetPk(fields)
 	stmt, err := t.deleteSQL(t.Name(model), fields)
 	if err != nil {
 		return err
@@ -443,7 +437,6 @@ func (t Table) Get(model interface{}) error {
 	if err != nil {
 		return err
 	}
-	_ = t.SetPk(fields)
 	stmt, err := t.getSQL(t.Name(model), fields)
 	if err != nil {
 		return err
@@ -689,45 +682,6 @@ func (t Table) Params(fields []*Field) []interface{} {
 	}
 
 	return list
-}
-
-//
-// Set PK
-// Generated when not already set as sha1
-// of the (const) natural keys.
-func (t Table) SetPk(fields []*Field) error {
-	pk := t.PkField(fields)
-	if pk == nil {
-		return nil
-	}
-	switch pk.Value.Kind() {
-	case reflect.String:
-		if pk.Pull() != "" {
-			return nil
-		}
-	default:
-		return liberr.Wrap(GenPkTypeErr)
-	}
-	h := sha1.New()
-	for _, f := range t.KeyFields(fields) {
-		f.Pull()
-		switch f.Value.Kind() {
-		case reflect.String:
-			h.Write([]byte(f.string))
-		case reflect.Bool,
-			reflect.Int,
-			reflect.Int8,
-			reflect.Int16,
-			reflect.Int32,
-			reflect.Int64:
-			bfr := new(bytes.Buffer)
-			binary.Write(bfr, binary.BigEndian, f.int)
-			h.Write(bfr.Bytes())
-		}
-	}
-	pk.string = hex.EncodeToString(h.Sum(nil))
-	pk.Push()
-	return nil
 }
 
 //
