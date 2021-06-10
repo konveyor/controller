@@ -7,7 +7,7 @@ type Labels map[string]string
 //
 // Label model
 type Label struct {
-	PK     string `sql:"pk"`
+	PK     string `sql:"pk(parent;kind;name)"`
 	Parent string `sql:"key"`
 	Kind   string `sql:"key"`
 	Name   string `sql:"key"`
