@@ -19,10 +19,35 @@ type TestBase struct {
 	Phone  string `sql:""`
 }
 
+type PlainObject struct {
+	ID   int    `sql:"pk"`
+	Name string `sql:""`
+	Age  int    `sql:""`
+}
+
+func (m *PlainObject) Pk() string {
+	return fmt.Sprintf("%d", m.ID)
+}
+
+func (m *PlainObject) String() string {
+	return fmt.Sprintf(
+		"PlainObject: id: %d, name:%s",
+		m.ID,
+		m.Name)
+}
+
+func (m *PlainObject) Equals(other Model) bool {
+	return false
+}
+
+func (m *PlainObject) Labels() Labels {
+	return nil
+}
+
 type TestObject struct {
 	TestBase
 	RowID  int64          `sql:"virtual"`
-	PK     string         `sql:"pk,generated(id)"`
+	PK     string         `sql:"pk(id)"`
 	ID     int            `sql:"key"`
 	Name   string         `sql:"index(a)"`
 	Age    int            `sql:"index(a)"`
@@ -174,9 +199,26 @@ func TestCRUD(t *testing.T) {
 	DB := New(
 		"/tmp/test.db",
 		&Label{},
+		&PlainObject{},
 		&TestObject{})
 	err = DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
+
+	plainA := &PlainObject{
+		ID:   18,
+		Name: "Ashley",
+		Age:  17,
+	}
+	err = DB.Insert(plainA)
+	g.Expect(err).To(gomega.BeNil())
+	plainB := &PlainObject{ID: 18}
+	err = DB.Get(plainB)
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(plainA.Pk()).To(gomega.Equal(plainB.Pk()))
+	g.Expect(plainA.ID).To(gomega.Equal(plainB.ID))
+	g.Expect(plainA.Name).To(gomega.Equal(plainB.Name))
+	g.Expect(plainA.Age).To(gomega.Equal(plainB.Age))
+
 	objA := &TestObject{
 		TestBase: TestBase{
 			Parent: 0,

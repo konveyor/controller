@@ -335,7 +335,7 @@ func (t Table) Insert(model interface{}) error {
 	if err != nil {
 		return err
 	}
-	_ = t.SetPk(fields)
+	t.EnsurePk(fields)
 	stmt, err := t.insertSQL(t.Name(model), fields)
 	if err != nil {
 		return err
@@ -373,7 +373,7 @@ func (t Table) Update(model interface{}) error {
 	if err != nil {
 		return err
 	}
-	_ = t.SetPk(fields)
+	t.EnsurePk(fields)
 	stmt, err := t.updateSQL(t.Name(model), fields)
 	if err != nil {
 		return err
@@ -409,7 +409,7 @@ func (t Table) Delete(model interface{}) error {
 	if err != nil {
 		return err
 	}
-	_ = t.SetPk(fields)
+	t.EnsurePk(fields)
 	stmt, err := t.deleteSQL(t.Name(model), fields)
 	if err != nil {
 		return err
@@ -446,7 +446,7 @@ func (t Table) Get(model interface{}) error {
 	if err != nil {
 		return err
 	}
-	_ = t.SetPk(fields)
+	t.EnsurePk(fields)
 	stmt, err := t.getSQL(t.Name(model), fields)
 	if err != nil {
 		return err
@@ -695,24 +695,30 @@ func (t Table) Params(fields []*Field) []interface{} {
 }
 
 //
-// Set PK
-// Generated when not already set as sha1
-// of the (const) natural keys.
-func (t Table) SetPk(fields []*Field) error {
+// Ensure PK is generated as specified/needed.
+func (t Table) EnsurePk(fields []*Field) {
 	pk := t.PkField(fields)
 	if pk == nil {
-		return nil
+		return
+	}
+	withFields := pk.WithFields()
+	if len(withFields) == 0 {
+		return
 	}
 	switch pk.Value.Kind() {
 	case reflect.String:
 		if pk.Pull() != "" {
-			return nil
+			return
 		}
 	default:
-		return liberr.Wrap(GenPkTypeErr)
+		return
 	}
 	h := sha1.New()
-	for _, f := range t.KeyFields(fields) {
+	for _, f := range fields {
+		name := strings.ToLower(f.Name)
+		if matched, _ := withFields[name]; !matched {
+			continue
+		}
 		f.Pull()
 		switch f.Value.Kind() {
 		case reflect.String:
@@ -730,7 +736,6 @@ func (t Table) SetPk(fields []*Field) error {
 	}
 	pk.string = hex.EncodeToString(h.Sum(nil))
 	pk.Push()
-	return nil
 }
 
 //
@@ -984,6 +989,10 @@ func (t Table) scan(row Row, fields []*Field) error {
 }
 
 //
+// Regex used for `pk(fields)` tags.
+var PkRegex = regexp.MustCompile(`(pk)((\()(.+)(\)))?`)
+
+//
 // Regex used for `unique(group)` tags.
 var UniqueRegex = regexp.MustCompile(`(unique)(\()(.+)(\))`)
 
@@ -1000,6 +1009,8 @@ var FkRegex = regexp.MustCompile(`(fk):(.+)(\()(.+)(\))`)
 // Tags:
 //   `sql:"pk"`
 //       The primary key.
+//   `sql:"pk(field;field;..)"`
+//       The generated primary key.
 //   `sql:"key"`
 //       The field is part of the natural key.
 //   `sql:"fk:T(F)"`
@@ -1034,12 +1045,15 @@ type Field struct {
 // Validate.
 func (f *Field) Validate() error {
 	switch f.Value.Kind() {
-	case reflect.String,
-		reflect.Int,
+	case reflect.String:
+	case reflect.Int,
 		reflect.Int8,
 		reflect.Int16,
 		reflect.Int32,
 		reflect.Int64:
+		if len(f.WithFields()) > 0 {
+			return liberr.Wrap(GenPkTypeErr)
+		}
 	default:
 		if f.Pk() {
 			return liberr.Wrap(PkTypeErr)
@@ -1204,8 +1218,39 @@ func (f *Field) Param() string {
 
 //
 // Get whether field is the primary key.
-func (f *Field) Pk() bool {
-	return f.hasOpt("pk")
+func (f *Field) Pk() (matched bool) {
+	for _, opt := range strings.Split(f.Tag, ",") {
+		m := PkRegex.FindStringSubmatch(opt)
+		if m != nil {
+			matched = true
+			break
+		}
+	}
+	return
+}
+
+//
+// Fields used to generate the primary key.
+// Map of lower-cased field names. May be empty
+// when generation is not enabled.
+func (f *Field) WithFields() (withFields map[string]bool) {
+	withFields = map[string]bool{}
+	for _, opt := range strings.Split(f.Tag, ",") {
+		opt = strings.TrimSpace(opt)
+		m := PkRegex.FindStringSubmatch(opt)
+		if m != nil && len(m) == 6 {
+			for _, name := range strings.Split(m[4], ";") {
+				name = strings.TrimSpace(name)
+				if len(name) > 0 {
+					name = strings.ToLower(name)
+					withFields[name] = true
+				}
+			}
+		}
+		break
+	}
+
+	return
 }
 
 //
