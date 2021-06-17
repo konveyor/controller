@@ -20,7 +20,10 @@ import (
 )
 
 const (
+	// SQL tag.
 	Tag = "sql"
+	// Max detail level.
+	MaxDetail = 10
 )
 
 //
@@ -1383,18 +1386,20 @@ func (f *Field) Encoded() (encoded bool) {
 
 //
 // Detail level.
+// Defaults:
+//   0 = primary and natural fields.
+//   1 = other fields.
 func (f *Field) Detail() (level int) {
-	for n := 0; n < 10; n++ {
+	level = 1
+	for n := 0; n < MaxDetail; n++ {
 		if f.hasOpt(fmt.Sprintf("d%d", n)) {
-			return n
+			level = n
+			return
 		}
 	}
-	level = 2
-	if f.Pk() || f.Key() || f.Virtual() {
+	if f.Pk() || f.Key() {
 		level = 0
-	}
-	if f.Encoded() {
-		level = 3
+		return
 	}
 
 	return
@@ -1403,10 +1408,6 @@ func (f *Field) Detail() (level int) {
 //
 // Match detail level.
 func (f *Field) MatchDetail(level int) bool {
-	if level == 1 { // ALL
-		return true
-	}
-
 	return f.Detail() <= level
 }
 
@@ -1489,10 +1490,9 @@ type ListOptions struct {
 	// Sort by field position.
 	Sort []int
 	// Field detail level.
-	//   0 = core: pk; key and virtual fields.
-	//   1 = all fields.
-	//   2 = plain fields.
-	//   3 = encoded fields.
+	// Defaults:
+	//   0 = primary and natural fields.
+	//   1 = other fields.
 	Detail int
 	// Predicate
 	Predicate Predicate
