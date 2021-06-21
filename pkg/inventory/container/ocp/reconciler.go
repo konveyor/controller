@@ -412,7 +412,7 @@ func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 			rl.log.V(3).Info(
 				"model created.",
 				ref.ToKind(r.model),
-				r.model.String())
+				libmodel.Describe(r.model))
 		}
 	case 0x02: // Update
 		if version > rl.versionThreshold {
@@ -423,7 +423,7 @@ func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 			rl.log.V(3).Info(
 				"model updated.",
 				ref.ToKind(r.model),
-				r.model.String())
+				libmodel.Describe(r.model))
 		}
 	case 0x04: // Delete
 		err = tx.Delete(r.model)
@@ -433,7 +433,7 @@ func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
 		rl.log.V(3).Info(
 			"model deleted.",
 			ref.ToKind(r.model),
-			r.model.String())
+			libmodel.Describe(r.model))
 	default:
 		return liberr.New(
 			"unknown action",

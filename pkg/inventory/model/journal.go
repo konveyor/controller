@@ -59,7 +59,7 @@ func (r *Event) String() string {
 	}
 	model := ""
 	if r.Model != nil {
-		model = r.Model.String()
+		model = Describe(r.Model)
 	}
 	return fmt.Sprintf(
 		"event-%.4d: %s model=%s",
