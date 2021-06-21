@@ -76,10 +76,6 @@ func (m *TestObject) String() string {
 		m.Name)
 }
 
-func (m *TestObject) Equals(other Model) bool {
-	return false
-}
-
 func (m *TestObject) Labels() Labels {
 	return m.labels
 }

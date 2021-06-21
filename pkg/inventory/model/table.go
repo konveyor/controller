@@ -652,6 +652,7 @@ func (t Table) Fields(model interface{}) ([]*Field, error) {
 						Tag:   sqlTag,
 						Name:  ft.Name,
 						Value: &fv,
+						Type:  &ft,
 					})
 			}
 		case reflect.Slice,
@@ -673,6 +674,7 @@ func (t Table) Fields(model interface{}) ([]*Field, error) {
 					Tag:   sqlTag,
 					Name:  ft.Name,
 					Value: &fv,
+					Type:  &ft,
 				})
 		}
 	}
@@ -1025,14 +1027,18 @@ var FkRegex = regexp.MustCompile(`(fk):(.+)(\()(.+)(\))`)
 //       The field is read-only and managed internally by the DB.
 //   `sql:"dn"`
 //       The field detail level.  n = level number (0-9).
+//   `sql:incremented`
+//       The field is auto-incremented.
 //
 type Field struct {
+	// reflect.Type of the field.
+	Type *reflect.StructField
 	// reflect.Value of the field.
 	Value *reflect.Value
-	// Tags.
-	Tag string
 	// Field name.
 	Name string
+	// SQL tag.
+	Tag string
 	// Staging (string) values.
 	string string
 	// Staging (int) values.
@@ -1113,6 +1119,9 @@ func (f *Field) Pull() interface{} {
 		reflect.Int32,
 		reflect.Int64:
 		f.int = f.Value.Int()
+		if f.Incremented() {
+			f.int++
+		}
 		return f.int
 	}
 
@@ -1323,6 +1332,12 @@ func (f *Field) Fk() *FK {
 	}
 
 	return nil
+}
+
+//
+// Get whether field is auto-incremented.
+func (f *Field) Incremented() bool {
+	return f.hasOpt("incremented")
 }
 
 // Convert the specified `object` to a value

@@ -392,7 +392,7 @@ func (r *Client) EndWatch(watch *Watch) {
 	r.log.V(4).Info(
 		"watch ended.",
 		"model",
-		watch.Model.String())
+		Describe(watch.Model))
 }
 
 //
@@ -667,27 +667,29 @@ type Labeler struct {
 // Insert labels for the model into the DB.
 func (r *Labeler) Insert(table Table, model Model) error {
 	kind := table.Name(model)
-	for l, v := range model.Labels() {
-		label := &Label{
-			Parent: model.Pk(),
-			Kind:   kind,
-			Name:   l,
-			Value:  v,
+	if labeled, cast := model.(Labeled); cast {
+		for l, v := range labeled.Labels() {
+			label := &Label{
+				Parent: model.Pk(),
+				Kind:   kind,
+				Name:   l,
+				Value:  v,
+			}
+			err := table.Insert(label)
+			if err != nil {
+				return err
+			}
+			r.log.V(2).Info(
+				"label inserted.",
+				"model",
+				Describe(model),
+				"kind",
+				kind,
+				"label",
+				l,
+				"value",
+				v)
 		}
-		err := table.Insert(label)
-		if err != nil {
-			return err
-		}
-		r.log.V(2).Info(
-			"label inserted.",
-			"model",
-			Describe(model),
-			"kind",
-			kind,
-			"label",
-			l,
-			"value",
-			v)
 	}
 
 	return nil
@@ -696,6 +698,9 @@ func (r *Labeler) Insert(table Table, model Model) error {
 //
 // Delete labels for a model in the DB.
 func (r *Labeler) Delete(table Table, model Model) error {
+	if _, cast := model.(Labeled); !cast {
+		return nil
+	}
 	list := []Label{}
 	err := table.List(
 		&list,
@@ -730,6 +735,9 @@ func (r *Labeler) Delete(table Table, model Model) error {
 //
 // Replace labels.
 func (r *Labeler) Replace(table Table, model Model) error {
+	if _, cast := model.(Labeled); !cast {
+		return nil
+	}
 	err := r.Delete(table, model)
 	if err != nil {
 		return err

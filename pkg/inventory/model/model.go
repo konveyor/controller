@@ -76,12 +76,12 @@ func (p *Page) Slice(collection interface{}) {
 type Model interface {
 	// Get the primary key.
 	Pk() string
-	// Get description of the model.
-	String() string
-	// Equal comparison.
-	Equals(other Model) bool
+}
+
+//
+// Labeled model.
+type Labeled interface {
 	// Get labels.
-	// Optional and may return nil.
 	Labels() Labels
 }
 
@@ -115,6 +115,13 @@ func Clone(model Model) Model {
 
 //
 // Model description.
-func Describe(model Model) string {
-	return ref.ToKind(model) + ": " + model.String()
+func Describe(model Model) (s string) {
+	s = ref.ToKind(model) + ": "
+	if hasStr, cast := model.(interface{ String() string }); cast {
+		s += hasStr.String()
+	} else {
+		s += model.Pk()
+	}
+
+	return
 }
