@@ -185,7 +185,7 @@ func TestCollection(t *testing.T) {
 func asIter(models []TestObject2) fb.Iterator {
 	list := fb.NewList()
 	for _, m := range models {
-		_ = list.Append(m)
+		list.Append(m)
 	}
 
 	return list.Iter()

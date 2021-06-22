@@ -563,11 +563,7 @@ func (t Table) Iter(model interface{}, options ListOptions) (itr fb.Iterator, er
 			err = liberr.Wrap(err)
 			return
 		}
-		err = list.Append(mPtr.Interface())
-		if err != nil {
-			err = liberr.Wrap(err)
-			return
-		}
+		list.Append(mPtr.Interface())
 	}
 
 	itr = list.Iter()

@@ -6,11 +6,9 @@ type Iterator interface {
 	// Length.
 	Len() int
 	// Next object.
-	Next() (interface{}, bool, error)
+	Next() (interface{}, bool)
 	// Next object.
-	NextWith(object interface{}) (bool, error)
-	// Get associated error.
-	Error() error
+	NextWith(object interface{}) bool
 	// Close the iterator.
 	Close()
 }
@@ -28,20 +26,14 @@ func (*EmptyIterator) Len() int {
 
 //
 // Next object.
-func (*EmptyIterator) Next() (interface{}, bool, error) {
-	return nil, false, nil
+func (*EmptyIterator) Next() (interface{}, bool) {
+	return nil, false
 }
 
 //
 // Next object.
-func (*EmptyIterator) NextWith(object interface{}) (bool, error) {
-	return false, nil
-}
-
-//
-// Get associated error.
-func (*EmptyIterator) Error() error {
-	return nil
+func (*EmptyIterator) NextWith(object interface{}) bool {
+	return false
 }
 
 //

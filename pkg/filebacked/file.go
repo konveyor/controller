@@ -47,11 +47,11 @@ type Writer struct {
 
 //
 // Append (write) object.
-func (w *Writer) Append(object interface{}) (err error) {
+func (w *Writer) Append(object interface{}) {
 	// Lazy open.
-	err = w.open()
+	err := w.open()
 	if err != nil {
-		return
+		panic(err)
 	}
 	// Update catalog.
 	kind := catalog.add(object)
@@ -60,11 +60,10 @@ func (w *Writer) Append(object interface{}) (err error) {
 	encoder := gob.NewEncoder(&bfr)
 	err = encoder.Encode(object)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	// Write entry.
-	err = w.writeEntry(kind, bfr)
+	w.writeEntry(kind, bfr)
 
 	log.V(6).Info(
 		"writer: appended object.",
@@ -79,17 +78,17 @@ func (w *Writer) Append(object interface{}) (err error) {
 //
 // Get a reader.
 func (w *Writer) Reader() (reader *Reader) {
-	path := w.newPath()
 	err := w.file.Sync()
-	if err == nil {
-		err = os.Link(w.path, path)
-		if err != nil {
-			log.V(3).Error(err, "link failed.")
-		}
+	if err != nil {
+		panic(err)
+	}
+	path := w.newPath()
+	err = os.Link(w.path, path)
+	if err != nil {
+		panic(err)
 	}
 	reader = &Reader{
-		error: liberr.Wrap(err),
-		path:  path,
+		path: path,
 	}
 	runtime.SetFinalizer(
 		reader,
@@ -131,13 +130,11 @@ func (w *Writer) open() (err error) {
 	w.path = w.newPath()
 	w.file, err = os.Create(w.path)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	err = w.writeLength()
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	log.V(5).Info(
 		"writer: opened.",
@@ -149,15 +146,14 @@ func (w *Writer) open() (err error) {
 
 //
 // Write entry.
-func (w *Writer) writeEntry(kind uint16, bfr bytes.Buffer) (err error) {
+func (w *Writer) writeEntry(kind uint16, bfr bytes.Buffer) {
 	file := w.file
 	// Write object kind.
 	b := make([]byte, 2)
 	binary.LittleEndian.PutUint16(b, kind)
-	_, err = file.Write(b)
+	_, err := file.Write(b)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	// Write object encoded length.
 	n := bfr.Len()
@@ -165,14 +161,12 @@ func (w *Writer) writeEntry(kind uint16, bfr bytes.Buffer) (err error) {
 	binary.LittleEndian.PutUint64(b, uint64(n))
 	_, err = file.Write(b)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	// Write encoded object.
 	nWrite, err := file.Write(bfr.Bytes())
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	if n != nWrite {
 		err = liberr.New("Write failed.")
@@ -181,8 +175,7 @@ func (w *Writer) writeEntry(kind uint16, bfr bytes.Buffer) (err error) {
 	w.length++
 	err = w.writeLength()
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	log.V(6).Info(
 		"writer: write entry.",
@@ -202,20 +195,17 @@ func (w *Writer) writeEntry(kind uint16, bfr bytes.Buffer) (err error) {
 func (w *Writer) writeLength() (err error) {
 	_, err = w.file.Seek(0, io.SeekStart)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	b := make([]byte, 8)
 	binary.LittleEndian.PutUint64(b, w.length)
 	_, err = w.file.Write(b)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	_, err = w.file.Seek(0, io.SeekEnd)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 
 	return
@@ -232,8 +222,6 @@ func (w *Writer) newPath() string {
 //
 // Reader.
 type Reader struct {
-	// Error
-	error error
 	// File path.
 	path string
 	// File.
@@ -247,7 +235,7 @@ func (r *Reader) Len() (length int) {
 	// Lazy open.
 	err := r.open()
 	if err != nil {
-		return
+		panic(err)
 	}
 	n, _ := r.len()
 	length = int(n)
@@ -255,28 +243,16 @@ func (r *Reader) Len() (length int) {
 }
 
 //
-// Error.
-func (r *Reader) Error() error {
-	return r.error
-}
-
-//
 // Get the next object.
-func (r *Reader) NextWith(object interface{}) (hasNext bool, err error) {
-	if r.error != nil {
-		return
-	}
-	defer func() {
-		r.error = err
-	}()
+func (r *Reader) NextWith(object interface{}) (hasNext bool) {
 	// Lazy open.
-	err = r.open()
+	err := r.open()
 	if err != nil {
-		return
+		panic(err)
 	}
 	// Read entry.
-	hasNext, _, b, err := r.readEntry()
-	if !hasNext || err != nil {
+	hasNext, _, b := r.readEntry()
+	if !hasNext {
 		return
 	}
 	// Decode object.
@@ -284,8 +260,7 @@ func (r *Reader) NextWith(object interface{}) (hasNext bool, err error) {
 	decoder := gob.NewDecoder(bfr)
 	err = decoder.Decode(object)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	log.V(6).Info(
 		"reader: read (with) next.",
@@ -299,21 +274,15 @@ func (r *Reader) NextWith(object interface{}) (hasNext bool, err error) {
 
 //
 // Get the next object.
-func (r *Reader) Next() (object interface{}, hasNext bool, err error) {
-	if r.error != nil {
-		return
-	}
-	defer func() {
-		r.error = err
-	}()
+func (r *Reader) Next() (object interface{}, hasNext bool) {
 	// Lazy open.
-	err = r.open()
+	err := r.open()
 	if err != nil {
-		return
+		panic(err)
 	}
 	// Read entry.
-	hasNext, kind, b, err := r.readEntry()
-	if !hasNext || err != nil {
+	hasNext, kind, b := r.readEntry()
+	if !hasNext {
 		return
 	}
 	// Decode object.
@@ -321,13 +290,11 @@ func (r *Reader) Next() (object interface{}, hasNext bool, err error) {
 	decoder := gob.NewDecoder(bfr)
 	object, found := catalog.build(kind)
 	if !found {
-		err = liberr.New("kind not found in the catalog.")
-		return
+		panic(err)
 	}
 	err = decoder.Decode(object)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	log.V(6).Info(
 		"reader: read next.",
@@ -343,16 +310,14 @@ func (r *Reader) Next() (object interface{}, hasNext bool, err error) {
 
 //
 // Read next entry.
-func (r *Reader) readEntry() (hasNext bool, kind uint16, bfr []byte, err error) {
+func (r *Reader) readEntry() (hasNext bool, kind uint16, bfr []byte) {
 	file := r.file
 	// Read object kind.
 	b := make([]byte, 2)
-	_, err = file.Read(b)
+	_, err := file.Read(b)
 	if err != nil {
 		if err != io.EOF {
-			err = liberr.Wrap(err)
-		} else {
-			err = nil
+			panic(err)
 		}
 		return
 	}
@@ -362,9 +327,7 @@ func (r *Reader) readEntry() (hasNext bool, kind uint16, bfr []byte, err error) 
 	_, err = file.Read(b)
 	if err != nil {
 		if err != io.EOF {
-			err = liberr.Wrap(err)
-		} else {
-			err = nil
+			panic(err)
 		}
 		return
 	}
@@ -374,9 +337,7 @@ func (r *Reader) readEntry() (hasNext bool, kind uint16, bfr []byte, err error) 
 	_, err = file.Read(b)
 	if err != nil {
 		if err != io.EOF {
-			err = liberr.Wrap(err)
-		} else {
-			err = nil
+			panic(err)
 		}
 		return
 	}
@@ -396,14 +357,12 @@ func (r *Reader) open() (err error) {
 	// Open.
 	r.file, err = os.Open(r.path)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	// Skip past length.
 	_, err = r.file.Seek(8, io.SeekStart)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	log.V(5).Info(
 		"reader: opened.",
@@ -437,29 +396,25 @@ func (r *Reader) len() (length uint64, err error) {
 	// Note current position.
 	offset, err := file.Seek(0, io.SeekCurrent)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	defer func() {
 		_, err = file.Seek(offset, io.SeekStart)
 		if err != nil {
-			err = liberr.Wrap(err)
+			panic(err)
 		}
 	}()
 	// Seek to beginning of the file.
 	_, err = file.Seek(0, io.SeekStart)
 	if err != nil {
-		err = liberr.Wrap(err)
-		return
+		panic(err)
 	}
 	// Read length.
 	b := make([]byte, 8)
 	_, err = file.Read(b)
 	if err != nil {
 		if err != io.EOF {
-			err = liberr.Wrap(err)
-		} else {
-			err = nil
+			panic(err)
 		}
 		return
 	}

@@ -579,12 +579,12 @@ func TestIter(t *testing.T) {
 	var list []TestObject
 	for {
 		object := TestObject{}
-		hasNext, err := itr.NextWith(&object)
-		if !hasNext {
+		if itr.NextWith(&object) {
+			g.Expect(err).To(gomega.BeNil())
+			list = append(list, object)
+		} else {
 			break
 		}
-		g.Expect(err).To(gomega.BeNil())
-		list = append(list, object)
 	}
 	g.Expect(len(list)).To(gomega.Equal(10))
 	// List all; detail level=0
@@ -592,12 +592,8 @@ func TestIter(t *testing.T) {
 		&TestObject{},
 		ListOptions{})
 	g.Expect(err).To(gomega.BeNil())
-	for {
-		object, hasNext, err := itr.Next()
+	for object, hasNext := itr.Next(); hasNext; object, hasNext = itr.Next() {
 		g.Expect(err).To(gomega.BeNil())
-		if !hasNext {
-			break
-		}
 		_, cast := object.(Model)
 		g.Expect(cast).To(gomega.BeTrue())
 	}
