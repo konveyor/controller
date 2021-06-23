@@ -69,6 +69,54 @@ func (r *Event) String() string {
 }
 
 //
+// Append self to the list.
+// The protocol is to write:
+//   Event (self)
+//   Event.Model
+//   Event.Updated (optional)
+func (r *Event) append(list *fb.List) {
+	list.Append(Event{
+		ID:     r.ID,
+		Action: r.Action,
+	})
+	list.Append(r.Model)
+	if r.Action == Updated {
+		list.Append(r.Updated)
+	}
+}
+
+//
+// Read self from the iterator.
+// The protocol is to read:
+//   Event (self)
+//   Event.Model
+//   Event.Updated (optional)
+func (r *Event) next(itr fb.Iterator) (hasNext bool) {
+	hasNext = itr.NextWith(r)
+	if !hasNext {
+		return
+	}
+	object, hasNext := itr.Next()
+	if hasNext {
+		r.Model = object.(Model)
+	} else {
+		return
+	}
+	if r.Action == Updated {
+		object, hasNext = itr.Next()
+		if hasNext {
+			r.Updated = object.(Model)
+		} else {
+			return
+		}
+	}
+
+	hasNext = true
+
+	return
+}
+
+//
 // Watch options.
 type WatchOptions struct {
 	// Initial snapshot.
@@ -180,12 +228,7 @@ func (w *Watch) Start(snapshot fb.Iterator) {
 			w.log.V(3).Info("watch stopped.")
 		}()
 		for {
-			m, hasNext, err := snapshot.Next()
-			if err != nil {
-				w.log.Error(err, "next() failed.")
-				w.Handler.Error(err)
-				return
-			}
+			m, hasNext := snapshot.Next()
 			if hasNext {
 				w.Handler.Created(
 					Event{
@@ -201,12 +244,7 @@ func (w *Watch) Start(snapshot fb.Iterator) {
 		for itr := range w.queue {
 			for {
 				event := Event{}
-				event, hasNext, err := w.next(itr)
-				if err != nil {
-					w.log.Error(err, "next() failed.")
-					w.Handler.Error(err)
-					return
-				}
+				hasNext := event.next(itr)
 				if !hasNext {
 					break
 				}
@@ -236,54 +274,6 @@ func (w *Watch) Start(snapshot fb.Iterator) {
 
 	w.started = true
 	go run()
-}
-
-//
-// Next Event from iterator.
-func (w *Watch) next(itr fb.Iterator) (event Event, hasNext bool, err error) {
-	event = Event{}
-	// Event.
-	hasNext, err = itr.NextWith(&event)
-	if err != nil {
-		return
-	}
-	if !hasNext {
-		return
-	}
-	// Event.Object.
-	object, hasNext, err := itr.Next()
-	if err != nil {
-		return
-	}
-	if !hasNext {
-		err = liberr.New("model expected after event.")
-		return
-	}
-	if model, cast := object.(Model); cast {
-		event.Model = model
-	} else {
-		w.Handler.Error(err)
-		return
-	}
-	if event.Action == Updated {
-		// Event.Updated .
-		object, hasNext, err = itr.Next()
-		if err != nil {
-			return
-		}
-		if !hasNext {
-			err = liberr.New("model expected after event.")
-			return
-		}
-		if model, cast := object.(Model); cast {
-			event.Updated = model
-		} else {
-			w.Handler.Error(err)
-			return
-		}
-	}
-
-	return
 }
 
 //
@@ -371,21 +361,12 @@ func (r *Journal) Created(model Model, committed bool) (err error) {
 	if !r.hasWatch(model) {
 		return
 	}
-	// Event.
 	event := Event{
 		ID:     serial.next(1),
 		Action: Created,
+		Model:  model,
 	}
-	err = r.staged.Append(event)
-	if err != nil {
-		return
-	}
-	// Event.Model.
-	event.Model = model
-	err = r.staged.Append(model)
-	if err != nil {
-		return
-	}
+	event.append(&r.staged)
 	if committed {
 		r.committed()
 	}
@@ -407,27 +388,13 @@ func (r *Journal) Updated(model Model, updated Model, committed bool) (err error
 	if !r.hasWatch(model) {
 		return
 	}
-	// Event.
 	event := Event{
-		ID:     serial.next(1),
-		Action: Updated,
+		ID:      serial.next(1),
+		Action:  Updated,
+		Model:   model,
+		Updated: updated,
 	}
-	err = r.staged.Append(event)
-	if err != nil {
-		return
-	}
-	// Event.Model.
-	event.Model = model
-	err = r.staged.Append(model)
-	if err != nil {
-		return
-	}
-	// Event.Updated.
-	event.Updated = updated
-	err = r.staged.Append(updated)
-	if err != nil {
-		return
-	}
+	event.append(&r.staged)
 	if committed {
 		r.committed()
 	}
@@ -449,21 +416,12 @@ func (r *Journal) Deleted(model Model, committed bool) (err error) {
 	if !r.hasWatch(model) {
 		return
 	}
-	// Event.
 	event := Event{
 		ID:     serial.next(1),
 		Action: Deleted,
+		Model:  model,
 	}
-	err = r.staged.Append(event)
-	if err != nil {
-		return
-	}
-	// Event.Model.
-	event.Model = model
-	err = r.staged.Append(model)
-	if err != nil {
-		return
-	}
+	event.append(&r.staged)
 	if committed {
 		r.committed()
 	}

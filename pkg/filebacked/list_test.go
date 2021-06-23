@@ -50,8 +50,7 @@ func TestList(t *testing.T) {
 
 	// append
 	for i := 0; i < len(input); i++ {
-		err := list.Append(input[i])
-		g.Expect(err).To(gomega.BeNil())
+		list.Append(input[i])
 	}
 	g.Expect(len(cat.content)).To(gomega.Equal(2))
 	g.Expect(list.writer.length).To(gomega.Equal(uint64(len(input))))
@@ -61,8 +60,7 @@ func TestList(t *testing.T) {
 	itr := list.Iter()
 	g.Expect(itr.Len()).To(gomega.Equal(len(input)))
 	for i := 0; i < len(input); i++ {
-		object, hasNext, err := itr.Next()
-		g.Expect(err).To(gomega.BeNil())
+		object, hasNext := itr.Next()
 		g.Expect(object).ToNot(gomega.BeNil())
 		g.Expect(hasNext).To(gomega.BeTrue())
 		g.Expect(itr.Len()).To(gomega.Equal(len(input)))
@@ -70,36 +68,30 @@ func TestList(t *testing.T) {
 
 	n := 0
 	itr = list.Iter()
-	g.Expect(itr.Error()).To(gomega.BeNil())
 	for {
-		object, hasNext, err := itr.Next()
-		g.Expect(err).To(gomega.BeNil())
+		object, hasNext := itr.Next()
 		if hasNext {
 			n++
 		} else {
 			break
 		}
 		g.Expect(object).ToNot(gomega.BeNil())
-		g.Expect(err).To(gomega.BeNil())
 		g.Expect(hasNext).To(gomega.BeTrue())
 	}
 	g.Expect(n).To(gomega.Equal(len(input)))
 
 	n = 0
 	itr = list.Iter()
-	g.Expect(itr.Error()).To(gomega.BeNil())
 	for {
 		person := &Person{}
-		hasNext, err := itr.NextWith(person)
-		g.Expect(err).To(gomega.BeNil())
+		hasNext := itr.NextWith(person)
 		if hasNext {
 			n++
 		} else {
 			break
 		}
 		user := &User{}
-		hasNext, err = itr.NextWith(user)
-		g.Expect(err).To(gomega.BeNil())
+		hasNext = itr.NextWith(user)
 		if hasNext {
 			n++
 		} else {
@@ -107,7 +99,6 @@ func TestList(t *testing.T) {
 		}
 		g.Expect(person).ToNot(gomega.BeNil())
 		g.Expect(user).ToNot(gomega.BeNil())
-		g.Expect(err).To(gomega.BeNil())
 		g.Expect(hasNext).To(gomega.BeTrue())
 	}
 	g.Expect(n).To(gomega.Equal(len(input)))

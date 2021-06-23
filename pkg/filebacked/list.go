@@ -7,16 +7,24 @@ list := fb.NewList()
 
 //
 // Append an object.
-err := list.Append(object)
+list.Append(object)
 
 //
 // Iterate the list.
 itr := list.Iter()
 for {
-    object, hasNext, err := itr.Next()
-    if err != nil || !hasNext {
+    object, hasNext := itr.Next()
+    if !hasNext {
         break
     }
+    ...
+}
+
+//
+// Iterate the list.
+itr := list.Iter()
+for object, hasNext := itr.Next(); hasNext; object, hasNext = itr.Next() {
+    ...
 }
 
 //
@@ -24,10 +32,11 @@ for {
 itr := list.Iter()
 for {
     person := Person{}
-    hasNext, err := itr.NextWith(&person))
-    if err != nil || !hasNext {
+    hasNext := itr.NextWith(&person))
+    if !hasNext {
         break
     }
+    ...
 }
 */
 package filebacked
@@ -55,9 +64,8 @@ type List struct {
 
 //
 // Append an object.
-func (l *List) Append(object interface{}) (err error) {
-	err = l.writer.Append(object)
-	return
+func (l *List) Append(object interface{}) {
+	l.writer.Append(object)
 }
 
 //

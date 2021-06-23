@@ -52,42 +52,27 @@ type Collection struct {
 
 //
 // Add models included in desired but not stored.
-func (r *Collection) Add(desired fb.Iterator) (err error) {
-	mp, err := r.dispositions(desired)
-	if err == nil {
-		err = r.add(mp)
-	}
-
-	return
+func (r *Collection) Add(desired fb.Iterator) error {
+	return r.add(r.dispositions(desired))
 }
 
 //
 // Update models.
-func (r *Collection) Update(desired fb.Iterator) (err error) {
-	mp, err := r.dispositions(desired)
-	if err == nil {
-		err = r.update(mp)
-	}
-
-	return
+func (r *Collection) Update(desired fb.Iterator) error {
+	return r.update(r.dispositions(desired))
 }
 
 //
 // Delete stored models not included in the desired.
-func (r *Collection) Delete(desired fb.Iterator) (err error) {
-	mp, err := r.dispositions(desired)
-	if err == nil {
-		err = r.delete(mp)
-	}
-
-	return
+func (r *Collection) Delete(desired fb.Iterator) error {
+	return r.delete(r.dispositions(desired))
 }
 
 //
 // Reconcile the collection.
 // Ensure the stored collection is as desired.
 func (r *Collection) Reconcile(desired fb.Iterator) (err error) {
-	mp, err := r.dispositions(desired)
+	mp := r.dispositions(desired)
 	err = r.delete(mp)
 	if err != nil {
 		return
@@ -106,31 +91,15 @@ func (r *Collection) Reconcile(desired fb.Iterator) (err error) {
 
 //
 // Build the dispositions.
-func (r *Collection) dispositions(desired fb.Iterator) (mp map[string]*Disposition, err error) {
+func (r *Collection) dispositions(desired fb.Iterator) (mp map[string]*Disposition) {
 	mp = map[string]*Disposition{}
-	for {
-		object, hasNext, iErr := r.Stored.Next()
-		if iErr != nil {
-			err = iErr
-			return
-		}
-		if !hasNext {
-			break
-		}
+	for object, hasNext := r.Stored.Next(); hasNext; object, hasNext = r.Stored.Next() {
 		m := object.(model.Model)
 		mp[m.Pk()] = &Disposition{
 			stored: m,
 		}
 	}
-	for {
-		object, hasNext, iErr := desired.Next()
-		if iErr != nil {
-			err = iErr
-			return
-		}
-		if !hasNext {
-			break
-		}
+	for object, hasNext := desired.Next(); hasNext; object, hasNext = desired.Next() {
 		m := object.(model.Model)
 		if dpn, found := mp[m.Pk()]; !found {
 			mp[m.Pk()] = &Disposition{
