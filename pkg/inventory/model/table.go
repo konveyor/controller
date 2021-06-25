@@ -355,6 +355,8 @@ func (t Table) Insert(model interface{}) error {
 		return liberr.Wrap(err)
 	}
 
+	t.reflectIncremented(fields)
+
 	log.V(5).Info(
 		"table: model inserted.",
 		"sql",
@@ -390,6 +392,8 @@ func (t Table) Update(model interface{}) error {
 	if nRows == 0 {
 		return liberr.Wrap(NotFound)
 	}
+
+	t.reflectIncremented(fields)
 
 	log.V(5).Info(
 		"table: model updated.",
@@ -818,6 +822,18 @@ func (t Table) Constraints(fields []*Field) []string {
 	}
 
 	return constraints
+}
+
+//
+// Reflect auto-incremented fields.
+// Field.int is incremented by Field.Push() called when the
+// SQL statement is built. This needs to be propagated to the model.
+func (t *Table) reflectIncremented(fields []*Field) {
+	for _, f := range fields {
+		if f.Incremented() {
+			f.Value.SetInt(f.int)
+		}
+	}
 }
 
 //

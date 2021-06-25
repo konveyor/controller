@@ -49,6 +49,7 @@ type TestObject struct {
 	RowID  int64          `sql:"virtual"`
 	PK     string         `sql:"pk(id)"`
 	ID     int            `sql:"key"`
+	Rev    int            `sql:"incremented"`
 	Name   string         `sql:"index(a)"`
 	Age    int            `sql:"index(a)"`
 	Int8   int8           `sql:""`
@@ -238,6 +239,7 @@ func TestCRUD(t *testing.T) {
 	assertEqual := func(a, b *TestObject) {
 		g.Expect(a.PK).To(gomega.Equal(b.PK))
 		g.Expect(a.ID).To(gomega.Equal(b.ID))
+		g.Expect(a.Rev).To(gomega.Equal(b.Rev))
 		g.Expect(a.Name).To(gomega.Equal(b.Name))
 		g.Expect(a.Age).To(gomega.Equal(b.Age))
 		g.Expect(a.Int8).To(gomega.Equal(b.Int8))
@@ -260,6 +262,7 @@ func TestCRUD(t *testing.T) {
 	// Insert
 	err = DB.Insert(objA)
 	g.Expect(err).To(gomega.BeNil())
+	g.Expect(objA.Rev).To(gomega.Equal(1))
 	objB := &TestObject{ID: objA.ID}
 	// Get
 	err = DB.Get(objB)
