@@ -163,6 +163,7 @@ func (r *Client) List(list interface{}, options ListOptions) (err error) {
 		r.log.V(4).Info(
 			"list succeeded.",
 			"options",
+			options,
 			"duration",
 			time.Since(mark))
 	}
