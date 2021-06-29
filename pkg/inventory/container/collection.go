@@ -21,12 +21,29 @@ type Shepherd interface {
 }
 
 //
+// Disposition model.
+type dpnModel struct {
+	// Iterator.
+	itr fb.Iterator
+	// Index within the iterator.
+	index int
+}
+
+//
+// Model.
+func (r *dpnModel) model() (m model.Model) {
+	object := r.itr.At(r.index)
+	m = object.(model.Model)
+	return
+}
+
+//
 // Disposition.
 type Disposition struct {
 	// The stored models in the collection.
-	stored model.Model
+	stored *dpnModel
 	// The desired models in the collection.
-	desired model.Model
+	desired *dpnModel
 }
 
 //
@@ -93,20 +110,31 @@ func (r *Collection) Reconcile(desired fb.Iterator) (err error) {
 // Build the dispositions.
 func (r *Collection) dispositions(desired fb.Iterator) (mp map[string]*Disposition) {
 	mp = map[string]*Disposition{}
-	for object, hasNext := r.Stored.Next(); hasNext; object, hasNext = r.Stored.Next() {
+	for i := 0; i < r.Stored.Len(); i++ {
+		object := r.Stored.At(i)
 		m := object.(model.Model)
 		mp[m.Pk()] = &Disposition{
-			stored: m,
+			stored: &dpnModel{
+				itr:   r.Stored,
+				index: i,
+			},
 		}
 	}
-	for object, hasNext := desired.Next(); hasNext; object, hasNext = desired.Next() {
+	for i := 0; i < desired.Len(); i++ {
+		object := desired.At(i)
 		m := object.(model.Model)
 		if dpn, found := mp[m.Pk()]; !found {
 			mp[m.Pk()] = &Disposition{
-				desired: m,
+				desired: &dpnModel{
+					itr:   desired,
+					index: i,
+				},
 			}
 		} else {
-			dpn.desired = m
+			dpn.desired = &dpnModel{
+				itr:   desired,
+				index: i,
+			}
 		}
 	}
 
@@ -118,7 +146,7 @@ func (r *Collection) dispositions(desired fb.Iterator) (mp map[string]*Dispositi
 func (r *Collection) add(dispositions Dispositions) (err error) {
 	for _, dpn := range dispositions {
 		if dpn.desired != nil && dpn.stored == nil {
-			err = r.Tx.Insert(dpn.desired)
+			err = r.Tx.Insert(dpn.desired.model())
 			if err == nil {
 				r.Added++
 			} else {
@@ -141,11 +169,13 @@ func (r *Collection) update(dispositions Dispositions) (err error) {
 		if dpn.desired == nil || dpn.stored == nil {
 			continue
 		}
-		if shepherd.Equals(dpn.desired, dpn.stored) {
+		desired := dpn.desired.model()
+		stored := dpn.stored.model()
+		if shepherd.Equals(desired, stored) {
 			continue
 		}
-		shepherd.Update(dpn.stored, dpn.desired)
-		err = r.Tx.Update(dpn.stored)
+		shepherd.Update(stored, desired)
+		err = r.Tx.Update(stored)
 		if err == nil {
 			r.Updated++
 		} else {
@@ -161,7 +191,7 @@ func (r *Collection) update(dispositions Dispositions) (err error) {
 func (r *Collection) delete(dispositions Dispositions) (err error) {
 	for _, dpn := range dispositions {
 		if dpn.stored != nil && dpn.desired == nil {
-			err = r.Tx.Delete(dpn.stored)
+			err = r.Tx.Delete(dpn.stored.model())
 			if err == nil {
 				r.Deleted++
 			} else {

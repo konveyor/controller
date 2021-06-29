@@ -12,6 +12,23 @@ list.Append(object)
 //
 // Iterate the list.
 itr := list.Iter()
+for i := 0; i < itr.Len(); i++ {
+    person := itr.At(i)
+    ...
+}
+
+//
+// Iterate the list.
+itr := list.Iter()
+for i := 0; i < itr.Len(); i++ {
+    person := Person{}
+    itr.AtWith(i, &person))
+    ...
+}
+
+//
+// Iterate the list.
+itr := list.Iter()
 for {
     object, hasNext := itr.Next()
     if !hasNext {
@@ -41,7 +58,9 @@ for {
 */
 package filebacked
 
-import "runtime"
+import (
+	"runtime"
+)
 
 //
 // List factory.
@@ -72,14 +91,30 @@ func (l *List) Append(object interface{}) {
 // Length.
 // Number of objects.
 func (l *List) Len() int {
-	return int(l.writer.length)
+	return len(l.writer.index)
+}
+
+// Object at index.
+func (l *List) At(index int) (object interface{}) {
+	reader := l.writer.Reader(true)
+	object = reader.At(index)
+	return
+}
+
+// Object at index.
+func (l *List) AtWith(index int, object interface{}) {
+	reader := l.writer.Reader(true)
+	reader.AtWith(index, object)
+	return
 }
 
 //
 // Get an iterator.
 func (l *List) Iter() (itr Iterator) {
 	if l.Len() > 0 {
-		itr = l.writer.Reader()
+		itr = &FbIterator{
+			Reader: l.writer.Reader(false),
+		}
 	} else {
 		itr = &EmptyIterator{}
 	}
