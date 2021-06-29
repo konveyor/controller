@@ -1,8 +1,10 @@
 package filebacked
 
 import (
+	"fmt"
 	"github.com/onsi/gomega"
 	"testing"
+	"time"
 )
 
 func TestList(t *testing.T) {
@@ -53,7 +55,6 @@ func TestList(t *testing.T) {
 		list.Append(input[i])
 	}
 	g.Expect(len(cat.content)).To(gomega.Equal(2))
-	g.Expect(list.writer.length).To(gomega.Equal(uint64(len(input))))
 	g.Expect(list.Len()).To(gomega.Equal(len(input)))
 
 	// iterate
@@ -66,6 +67,7 @@ func TestList(t *testing.T) {
 		g.Expect(itr.Len()).To(gomega.Equal(len(input)))
 	}
 
+	// next()
 	n := 0
 	itr = list.Iter()
 	for {
@@ -80,27 +82,136 @@ func TestList(t *testing.T) {
 	}
 	g.Expect(n).To(gomega.Equal(len(input)))
 
-	n = 0
+	// nextWith()
 	itr = list.Iter()
-	for {
+	for n = 0; ; n += 2 {
 		person := &Person{}
 		hasNext := itr.NextWith(person)
-		if hasNext {
-			n++
-		} else {
+		if !hasNext {
 			break
 		}
 		user := &User{}
 		hasNext = itr.NextWith(user)
-		if hasNext {
-			n++
-		} else {
+		if !hasNext {
 			break
 		}
 		g.Expect(person).ToNot(gomega.BeNil())
+		g.Expect(person.ID).To(gomega.Equal(n / 2))
 		g.Expect(user).ToNot(gomega.BeNil())
+		g.Expect(user.ID).To(gomega.Equal(n / 2))
 		g.Expect(hasNext).To(gomega.BeTrue())
 	}
 	g.Expect(n).To(gomega.Equal(len(input)))
 
+	// Direct index.
+	itr = list.Iter()
+	for n = 0; n < itr.Len(); n++ {
+		object := itr.At(n)
+		g.Expect(object).ToNot(gomega.BeNil())
+	}
+	g.Expect(n).To(gomega.Equal(len(input)))
+
+	// Mixed direct index and nextWith().
+	itr = list.Iter()
+	for n = 0; n < itr.Len(); n += 2 {
+		person := &Person{}
+		person4 := &Person{}
+		itr.AtWith(8, person4)
+		_ = itr.NextWith(person)
+		g.Expect(person.ID).To(gomega.Equal(n / 2))
+		g.Expect(person4.ID).To(gomega.Equal(4))
+		user := &User{}
+		user2 := &User{}
+		_ = itr.NextWith(user)
+		itr.AtWith(4, user2)
+		g.Expect(user.ID).To(gomega.Equal(n / 2))
+		g.Expect(user2.ID).To(gomega.Equal(2))
+	}
+	g.Expect(n).To(gomega.Equal(len(input)))
+
+	// Direct index (with).
+	itr = list.Iter()
+	for n = 0; n < itr.Len(); n += 2 {
+		person := &Person{}
+		itr.AtWith(n, person)
+		user := &User{}
+		itr.AtWith(n+1, user)
+		g.Expect(person).ToNot(gomega.BeNil())
+		g.Expect(person.ID).To(gomega.Equal(n / 2))
+		g.Expect(user).ToNot(gomega.BeNil())
+		g.Expect(user.ID).To(gomega.Equal(n / 2))
+	}
+	g.Expect(n).To(gomega.Equal(len(input)))
+
+	// List direct index.
+	for n = 0; n < list.Len(); n++ {
+		object := list.At(n)
+		g.Expect(object).ToNot(gomega.BeNil())
+	}
+	g.Expect(n).To(gomega.Equal(len(input)))
+
+	// List direct index (with).
+	for n = 0; n < list.Len(); n += 2 {
+		person := &Person{}
+		list.AtWith(n, person)
+		user := &User{}
+		list.AtWith(n+1, user)
+		g.Expect(person).ToNot(gomega.BeNil())
+		g.Expect(person.ID).To(gomega.Equal(n / 2))
+		g.Expect(user).ToNot(gomega.BeNil())
+		g.Expect(user.ID).To(gomega.Equal(n / 2))
+	}
+	g.Expect(n).To(gomega.Equal(len(input)))
+}
+
+// Disabled by default.
+func __TestListPerf(t *testing.T) {
+	list := NewList()
+	defer list.Close()
+
+	N := 100000
+
+	mark := time.Now()
+	for n := 0; n < N; n++ {
+		list.Append(n)
+	}
+	duration := time.Since(mark)
+	fmt.Printf("Append() total=%s per:%s\n", duration, duration/time.Duration(N))
+
+	mark = time.Now()
+	itr := list.Iter()
+	for i := 0; i < itr.Len(); i++ {
+		_, _ = itr.Next()
+	}
+	itr.Close()
+	duration = time.Since(mark)
+	fmt.Printf("Next() total=%s per:%s\n", duration, duration/time.Duration(N))
+
+	n := 0
+	mark = time.Now()
+	itr = list.Iter()
+	for i := 0; i < itr.Len(); i++ {
+		_ = itr.NextWith(&n)
+	}
+	itr.Close()
+	duration = time.Since(mark)
+	fmt.Printf("NextWith() total=%s per:%s\n", duration, duration/time.Duration(N))
+
+	mark = time.Now()
+	itr = list.Iter()
+	for i := 0; i < itr.Len(); i++ {
+		_ = itr.At(i)
+	}
+	itr.Close()
+	duration = time.Since(mark)
+	fmt.Printf("At() total=%s per:%s\n", duration, duration/time.Duration(N))
+
+	mark = time.Now()
+	itr = list.Iter()
+	for i := 0; i < itr.Len(); i++ {
+		itr.AtWith(i, &n)
+	}
+	itr.Close()
+	duration = time.Since(mark)
+	fmt.Printf("AtWith() total=%s per:%s\n", duration, duration/time.Duration(N))
 }

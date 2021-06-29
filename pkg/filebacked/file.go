@@ -41,15 +41,19 @@ type Writer struct {
 	path string
 	// File.
 	file *os.File
-	// Number of objects written.
-	length uint64
+	// Direct access index.
+	index []int64
+	// Dirty (needs flush).
+	dirty bool
 }
 
 //
 // Append (write) object.
 func (w *Writer) Append(object interface{}) {
 	// Lazy open.
-	err := w.open()
+	w.open()
+	// Seek end.
+	_, err := w.file.Seek(0, io.SeekEnd)
 	if err != nil {
 		panic(err)
 	}
@@ -63,7 +67,9 @@ func (w *Writer) Append(object interface{}) {
 		panic(err)
 	}
 	// Write entry.
-	w.writeEntry(kind, bfr)
+	offset := w.writeEntry(kind, bfr)
+	w.index = append(w.index, offset)
+	w.dirty = true
 
 	log.V(6).Info(
 		"writer: appended object.",
@@ -76,25 +82,32 @@ func (w *Writer) Append(object interface{}) {
 }
 
 //
-// Get a reader.
-func (w *Writer) Reader() (reader *Reader) {
-	err := w.file.Sync()
-	if err != nil {
-		panic(err)
+// Build a reader.
+func (w *Writer) Reader(shared bool) (reader *Reader) {
+	w.open()
+	w.flush()
+	if !shared {
+		path := w.newPath()
+		err := os.Link(w.path, path)
+		if err != nil {
+			panic(err)
+		}
+		reader = &Reader{
+			index: w.index[:],
+			path:  path,
+		}
+		runtime.SetFinalizer(
+			reader,
+			func(r *Reader) {
+				r.Close()
+			})
+	} else {
+		reader = &Reader{
+			index: w.index[:],
+			path:  w.path,
+			file:  w.file,
+		}
 	}
-	path := w.newPath()
-	err = os.Link(w.path, path)
-	if err != nil {
-		panic(err)
-	}
-	reader = &Reader{
-		path: path,
-	}
-	runtime.SetFinalizer(
-		reader,
-		func(r *Reader) {
-			r.Close()
-		})
 	log.V(5).Info(
 		"writer: reader created.",
 		"path",
@@ -122,17 +135,28 @@ func (w *Writer) Close() {
 }
 
 //
+// Flush.
+func (w *Writer) flush() {
+	if !w.dirty {
+		return
+	}
+	err := w.file.Sync()
+	if err == nil {
+		w.dirty = false
+	} else {
+		panic(err)
+	}
+}
+
+//
 // Open the writer.
-func (w *Writer) open() (err error) {
+func (w *Writer) open() {
 	if w.file != nil {
 		return
 	}
+	var err error
 	w.path = w.newPath()
 	w.file, err = os.Create(w.path)
-	if err != nil {
-		panic(err)
-	}
-	err = w.writeLength()
 	if err != nil {
 		panic(err)
 	}
@@ -146,12 +170,16 @@ func (w *Writer) open() (err error) {
 
 //
 // Write entry.
-func (w *Writer) writeEntry(kind uint16, bfr bytes.Buffer) {
+func (w *Writer) writeEntry(kind uint16, bfr bytes.Buffer) (offset int64) {
 	file := w.file
+	offset, err := file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		panic(err)
+	}
 	// Write object kind.
 	b := make([]byte, 2)
 	binary.LittleEndian.PutUint16(b, kind)
-	_, err := file.Write(b)
+	_, err = file.Write(b)
 	if err != nil {
 		panic(err)
 	}
@@ -171,12 +199,6 @@ func (w *Writer) writeEntry(kind uint16, bfr bytes.Buffer) {
 	if n != nWrite {
 		err = liberr.New("Write failed.")
 	}
-	// Write length.
-	w.length++
-	err = w.writeLength()
-	if err != nil {
-		panic(err)
-	}
 	log.V(6).Info(
 		"writer: write entry.",
 		"path",
@@ -184,29 +206,7 @@ func (w *Writer) writeEntry(kind uint16, bfr bytes.Buffer) {
 		"kind",
 		kind,
 		"length",
-		w.length)
-
-	return
-}
-
-//
-// Write length.
-// Number of objects written.
-func (w *Writer) writeLength() (err error) {
-	_, err = w.file.Seek(0, io.SeekStart)
-	if err != nil {
-		panic(err)
-	}
-	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, w.length)
-	_, err = w.file.Write(b)
-	if err != nil {
-		panic(err)
-	}
-	_, err = w.file.Seek(0, io.SeekEnd)
-	if err != nil {
-		panic(err)
-	}
+		len(w.index))
 
 	return
 }
@@ -226,91 +226,107 @@ type Reader struct {
 	path string
 	// File.
 	file *os.File
+	// Direct access index.
+	index []int64
+	// shared
+	shared bool
 }
 
 //
 // Length.
 // Number of objects in the list.
 func (r *Reader) Len() (length int) {
-	// Lazy open.
-	err := r.open()
-	if err != nil {
-		panic(err)
-	}
-	n, _ := r.len()
-	length = int(n)
-	return
+	return len(r.index)
 }
 
 //
-// Get the next object.
-func (r *Reader) NextWith(object interface{}) (hasNext bool) {
+// Get the object at index.
+func (r *Reader) At(index int) (object interface{}) {
 	// Lazy open.
-	err := r.open()
+	r.open()
+	// Seek.
+	offset := r.index[index]
+	_, err := r.file.Seek(offset, io.SeekStart)
 	if err != nil {
 		panic(err)
 	}
 	// Read entry.
-	hasNext, _, b := r.readEntry()
-	if !hasNext {
-		return
-	}
-	// Decode object.
-	bfr := bytes.NewBuffer(b)
-	decoder := gob.NewDecoder(bfr)
-	err = decoder.Decode(object)
-	if err != nil {
-		panic(err)
-	}
-	log.V(6).Info(
-		"reader: read (with) next.",
-		"path",
-		r.path,
-		"next",
-		hasNext)
-
-	return
-}
-
-//
-// Get the next object.
-func (r *Reader) Next() (object interface{}, hasNext bool) {
-	// Lazy open.
-	err := r.open()
-	if err != nil {
-		panic(err)
-	}
-	// Read entry.
-	hasNext, kind, b := r.readEntry()
-	if !hasNext {
-		return
-	}
+	kind, b := r.readEntry()
 	// Decode object.
 	bfr := bytes.NewBuffer(b)
 	decoder := gob.NewDecoder(bfr)
 	object, found := catalog.build(kind)
 	if !found {
-		panic(err)
+		panic(liberr.New("object not found in catalog."))
 	}
 	err = decoder.Decode(object)
 	if err != nil {
 		panic(err)
 	}
+
 	log.V(6).Info(
-		"reader: read next.",
+		"reader: read at index.",
 		"path",
 		r.path,
-		"kind",
-		kind,
-		"next",
-		hasNext)
+		"index",
+		index)
 
 	return
 }
 
 //
+// Get the object at index.
+func (r *Reader) AtWith(index int, object interface{}) {
+	// Lazy open.
+	r.open()
+	// Seek.
+	offset := r.index[index]
+	_, err := r.file.Seek(offset, io.SeekStart)
+	if err != nil {
+		panic(err)
+	}
+	// Read entry.
+	_, b := r.readEntry()
+	// Decode object.
+	bfr := bytes.NewBuffer(b)
+	decoder := gob.NewDecoder(bfr)
+	err = decoder.Decode(object)
+	if err != nil {
+		panic(err)
+	}
+
+	log.V(6).Info(
+		"reader: read at index (with) object.",
+		"path",
+		r.path,
+		"index",
+		index)
+
+	return
+}
+
+//
+// Close the reader.
+func (r *Reader) Close() {
+	if r.shared {
+		return
+	}
+	defer func() {
+		_ = os.Remove(r.path)
+	}()
+	if r.file == nil {
+		return
+	}
+	_ = r.file.Close()
+	log.V(5).Info(
+		"reader: closed.",
+		"path",
+		r.path)
+}
+
+//
 // Read next entry.
-func (r *Reader) readEntry() (hasNext bool, kind uint16, bfr []byte) {
+func (r *Reader) readEntry() (kind uint16, bfr []byte) {
 	file := r.file
 	// Read object kind.
 	b := make([]byte, 2)
@@ -342,7 +358,6 @@ func (r *Reader) readEntry() (hasNext bool, kind uint16, bfr []byte) {
 		return
 	}
 
-	hasNext = true
 	bfr = b
 
 	return
@@ -350,76 +365,21 @@ func (r *Reader) readEntry() (hasNext bool, kind uint16, bfr []byte) {
 
 //
 // Open the reader.
-func (r *Reader) open() (err error) {
-	if r.file != nil {
+func (r *Reader) open() {
+	if r.shared || r.file != nil {
 		return
 	}
 	// Open.
+	var err error
 	r.file, err = os.Open(r.path)
 	if err != nil {
 		panic(err)
 	}
-	// Skip past length.
-	_, err = r.file.Seek(8, io.SeekStart)
-	if err != nil {
-		panic(err)
-	}
+
 	log.V(5).Info(
 		"reader: opened.",
 		"path",
 		r.path)
-
-	return
-}
-
-//
-// Close the reader.
-func (r *Reader) Close() {
-	defer func() {
-		_ = os.Remove(r.path)
-	}()
-	if r.file == nil {
-		return
-	}
-	_ = r.file.Close()
-	log.V(5).Info(
-		"reader: closed.",
-		"path",
-		r.path)
-}
-
-//
-// Read length.
-// Number of objects.
-func (r *Reader) len() (length uint64, err error) {
-	file := r.file
-	// Note current position.
-	offset, err := file.Seek(0, io.SeekCurrent)
-	if err != nil {
-		panic(err)
-	}
-	defer func() {
-		_, err = file.Seek(offset, io.SeekStart)
-		if err != nil {
-			panic(err)
-		}
-	}()
-	// Seek to beginning of the file.
-	_, err = file.Seek(0, io.SeekStart)
-	if err != nil {
-		panic(err)
-	}
-	// Read length.
-	b := make([]byte, 8)
-	_, err = file.Read(b)
-	if err != nil {
-		if err != io.EOF {
-			panic(err)
-		}
-		return
-	}
-
-	length = binary.LittleEndian.Uint64(b)
 
 	return
 }
