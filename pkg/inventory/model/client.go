@@ -29,7 +29,7 @@ type DB interface {
 	// List models based on the type of slice.
 	List(interface{}, ListOptions) error
 	// List models.
-	Iter(interface{}, ListOptions) (fb.Iterator, error)
+	Find(interface{}, ListOptions) (fb.Iterator, error)
 	// Count based on the specified model.
 	Count(Model, Predicate) (int64, error)
 	// Begin a transaction.
@@ -172,15 +172,15 @@ func (r *Client) List(list interface{}, options ListOptions) (err error) {
 }
 
 //
-// List models.
-func (r *Client) Iter(model interface{}, options ListOptions) (itr fb.Iterator, err error) {
+// Find models.
+func (r *Client) Find(model interface{}, options ListOptions) (itr fb.Iterator, err error) {
 	mark := time.Now()
 	r.dbMutex.RLock()
 	defer r.dbMutex.RUnlock()
-	itr, err = Table{r.db}.Iter(model, options)
+	itr, err = Table{r.db}.Find(model, options)
 	if err == nil {
 		r.log.V(4).Info(
-			"iter succeeded",
+			"find succeeded",
 			"options",
 			options,
 			"duration",
@@ -364,7 +364,7 @@ func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) 
 	options := handler.Options()
 	var snapshot fb.Iterator
 	if options.Snapshot {
-		snapshot, err = Table{r.db}.Iter(model, ListOptions{Detail: 1})
+		snapshot, err = Table{r.db}.Find(model, ListOptions{Detail: 1})
 		if err != nil {
 			return
 		}
@@ -480,8 +480,8 @@ func (r *Tx) List(list interface{}, options ListOptions) (err error) {
 
 //
 // List models.
-func (r *Tx) Iter(model interface{}, options ListOptions) (itr fb.Iterator, err error) {
-	itr, err = Table{r.real}.Iter(model, options)
+func (r *Tx) Find(model interface{}, options ListOptions) (itr fb.Iterator, err error) {
+	itr, err = Table{r.real}.Find(model, options)
 	if err == nil {
 		r.log.V(4).Info(
 			"tx: iter succeeded",

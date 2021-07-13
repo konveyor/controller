@@ -42,7 +42,7 @@ func TestCollection(t *testing.T) {
 
 	//
 	// Test nothing changed.
-	stored, err := DB.Iter(
+	stored, err := DB.Find(
 		&TestObject2{},
 		model.ListOptions{
 			Detail: model.MaxDetail,
@@ -59,7 +59,7 @@ func TestCollection(t *testing.T) {
 
 	//
 	// Test adds.
-	stored, err = DB.Iter(
+	stored, err = DB.Find(
 		&TestObject2{},
 		model.ListOptions{
 			Detail: model.MaxDetail,
@@ -88,7 +88,7 @@ func TestCollection(t *testing.T) {
 
 	//
 	// Test updates.
-	stored, err = DB.Iter(
+	stored, err = DB.Find(
 		&TestObject2{},
 		model.ListOptions{
 			Detail: model.MaxDetail,
@@ -119,7 +119,7 @@ func TestCollection(t *testing.T) {
 
 	//
 	// Test deletes.
-	stored, err = DB.Iter(
+	stored, err = DB.Find(
 		&TestObject2{},
 		model.ListOptions{
 			Detail: model.MaxDetail,
@@ -146,7 +146,7 @@ func TestCollection(t *testing.T) {
 	g.Expect(errors.Is(err, model.NotFound)).To(gomega.BeTrue())
 
 	// Test reconcile.
-	stored, err = DB.Iter(
+	stored, err = DB.Find(
 		&TestObject2{},
 		model.ListOptions{
 			Detail: model.MaxDetail,
