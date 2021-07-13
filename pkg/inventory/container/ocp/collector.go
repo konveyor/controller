@@ -35,8 +35,8 @@ type Cluster interface {
 }
 
 //
-// An OpenShift reconciler.
-type Reconciler struct {
+// An OpenShift collector.
+type Collector struct {
 	// The cluster CR.
 	cluster Cluster
 	// DB client.
@@ -60,26 +60,26 @@ type Reconciler struct {
 	// lower than the threshold is redundant to changes made
 	// during collection reconciliation.
 	versionThreshold uint64
-	// The reconciler has (initial) parity.
+	// The collector has (initial) parity.
 	parity bool
 	// cancel function.
 	cancel func()
 }
 
 //
-// New reconciler.
+// New collector.
 func New(
 	db libmodel.DB,
 	cluster Cluster,
 	secret *core.Secret,
-	collections ...Collection) *Reconciler {
+	collections ...Collection) *Collector {
 	//
-	log := logging.WithName("reconciler|ocp").WithValues(
+	log := logging.WithName("collector|ocp").WithValues(
 		"cluster",
 		path.Join(
 			cluster.GetNamespace(),
 			cluster.GetName()))
-	return &Reconciler{
+	return &Collector{
 		collections: collections,
 		cluster:     cluster,
 		secret:      secret,
@@ -90,43 +90,43 @@ func New(
 
 //
 // The name.
-func (r *Reconciler) Name() string {
+func (r *Collector) Name() string {
 	return r.cluster.GetName()
 }
 
 //
 // The owner.
-func (r *Reconciler) Owner() meta.Object {
+func (r *Collector) Owner() meta.Object {
 	return r.cluster
 }
 
 //
 // Get the DB.
-func (r *Reconciler) DB() libmodel.DB {
+func (r *Collector) DB() libmodel.DB {
 	return r.db
 }
 
 //
 // Get the Client.
-func (r *Reconciler) Client() client.Client {
+func (r *Collector) Client() client.Client {
 	return r.client
 }
 
 //
 // Reset.
-func (r *Reconciler) Reset() {
+func (r *Collector) Reset() {
 	r.parity = false
 }
 
 //
-// Reconciler has achieved parity.
-func (r *Reconciler) HasParity() bool {
+// Collector has achieved parity.
+func (r *Collector) HasParity() bool {
 	return r.parity
 }
 
 //
 // Update the versionThreshold
-func (r *Reconciler) UpdateThreshold(m libmodel.Model) {
+func (r *Collector) UpdateThreshold(m libmodel.Model) {
 	if m, cast := m.(interface{ ResourceVersion() uint64 }); cast {
 		n := m.ResourceVersion()
 		if n > r.versionThreshold {
@@ -136,13 +136,13 @@ func (r *Reconciler) UpdateThreshold(m libmodel.Model) {
 }
 
 // Test connection with credentials.
-func (r *Reconciler) Test() error {
+func (r *Collector) Test() error {
 	return r.buildClient()
 }
 
 //
-// Start the reconciler.
-func (r *Reconciler) Start() error {
+// Start the collector.
+func (r *Collector) Start() error {
 	ctx := context.Background()
 	ctx, r.cancel = context.WithCancel(ctx)
 	for _, collection := range r.collections {
@@ -181,7 +181,7 @@ func (r *Reconciler) Start() error {
 //   2. Reconcile all of the collections.
 //   3. Mark parity.
 //   4. Start apply events (coroutine).
-func (r *Reconciler) start(ctx context.Context) (err error) {
+func (r *Collector) start(ctx context.Context) (err error) {
 	r.versionThreshold = 0
 	r.eventChannel = make(chan ModelEvent, 100)
 	r.stopChannel = make(chan struct{})
@@ -217,7 +217,7 @@ func (r *Reconciler) start(ctx context.Context) (err error) {
 
 //
 // Reconcile collections.
-func (r *Reconciler) reconcileCollections(ctx context.Context) (err error) {
+func (r *Collector) reconcileCollections(ctx context.Context) (err error) {
 	mark := time.Now()
 	for _, collection := range r.collections {
 		err = collection.Reconcile(ctx)
@@ -242,11 +242,11 @@ func (r *Reconciler) reconcileCollections(ctx context.Context) (err error) {
 }
 
 //
-// Shutdown the reconciler.
+// Shutdown the collector.
 //   1. Close manager stop channel.
 //   2. Close watch event coroutine channel.
 //   3. Cancel the context.
-func (r *Reconciler) Shutdown() {
+func (r *Collector) Shutdown() {
 	r.log.V(3).Info("shutdown.")
 	r.terminate()
 	if r.cancel != nil {
@@ -256,7 +256,7 @@ func (r *Reconciler) Shutdown() {
 
 //
 // Terminate coroutines.
-func (r *Reconciler) terminate() {
+func (r *Collector) terminate() {
 	defer func() {
 		recover()
 	}()
@@ -268,7 +268,7 @@ func (r *Reconciler) terminate() {
 // Enqueue create model event.
 // Used by watch predicates.
 // Swallow panic: send on closed channel.
-func (r *Reconciler) Create(m libmodel.Model) {
+func (r *Collector) Create(m libmodel.Model) {
 	defer func() {
 		if p := recover(); p != nil {
 			r.log.V(4).Info("channel send failed.")
@@ -281,7 +281,7 @@ func (r *Reconciler) Create(m libmodel.Model) {
 // Enqueue update model event.
 // Used by watch predicates.
 // Swallow panic: send on closed channel.
-func (r *Reconciler) Update(m libmodel.Model) {
+func (r *Collector) Update(m libmodel.Model) {
 	defer func() {
 		if p := recover(); p != nil {
 			r.log.V(4).Info("channel send failed.")
@@ -294,7 +294,7 @@ func (r *Reconciler) Update(m libmodel.Model) {
 // Enqueue delete model event.
 // Used by watch predicates.
 // Swallow panic: send on closed channel.
-func (r *Reconciler) Delete(m libmodel.Model) {
+func (r *Collector) Delete(m libmodel.Model) {
 	defer func() {
 		if p := recover(); p != nil {
 			r.log.V(4).Info("channel send failed.")
@@ -305,7 +305,7 @@ func (r *Reconciler) Delete(m libmodel.Model) {
 
 //
 // Build the k8s manager.
-func (r *Reconciler) buildManager() (err error) {
+func (r *Collector) buildManager() (err error) {
 	r.manager, err = manager.New(
 		r.cluster.RestCfg(r.secret),
 		manager.Options{
@@ -343,7 +343,7 @@ func (r *Reconciler) buildManager() (err error) {
 
 //
 // Build non-cached client.
-func (r *Reconciler) buildClient() (err error) {
+func (r *Collector) buildClient() (err error) {
 	r.client, err = client.New(
 		r.cluster.RestCfg(r.secret),
 		client.Options{
@@ -355,7 +355,7 @@ func (r *Reconciler) buildClient() (err error) {
 
 //
 // Apply model events.
-func (r *Reconciler) applyEvents() {
+func (r *Collector) applyEvents() {
 	r.log.V(3).Info("apply started.")
 	defer r.log.V(3).Info("apply terminated.")
 	for event := range r.eventChannel {
@@ -369,7 +369,7 @@ func (r *Reconciler) applyEvents() {
 
 //
 // Never called.
-func (r *Reconciler) Reconcile(request reconcile.Request) (reconcile.Result, error) {
+func (r *Collector) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	return reconcile.Result{}, nil
 }
 
@@ -388,7 +388,7 @@ type ModelEvent struct {
 
 //
 // Apply the change to the DB.
-func (r *ModelEvent) Apply(rl *Reconciler) (err error) {
+func (r *ModelEvent) Apply(rl *Collector) (err error) {
 	tx, err := rl.db.Begin()
 	if err != nil {
 		return
