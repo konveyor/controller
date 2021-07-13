@@ -46,23 +46,24 @@ func (m *PlainObject) Labels() Labels {
 
 type TestObject struct {
 	TestBase
-	RowID  int64          `sql:"virtual"`
-	PK     string         `sql:"pk(id)"`
-	ID     int            `sql:"key"`
-	Rev    int            `sql:"incremented"`
-	Name   string         `sql:"index(a)"`
-	Age    int            `sql:"index(a)"`
-	Int8   int8           `sql:""`
-	Int16  int16          `sql:""`
-	Int32  int32          `sql:""`
-	Bool   bool           `sql:""`
-	Object TestEncoded    `sql:""`
-	Slice  []string       `sql:""`
-	Map    map[string]int `sql:""`
-	D1     string         `sql:"d1"`
-	D2     string         `sql:"d2"`
-	D3     string         `sql:"d3"`
-	D4     string         `sql:"d4"`
+	RowID  int64  `sql:"virtual"`
+	PK     string `sql:"pk(id)"`
+	ID     int    `sql:"key"`
+	Rev    int    `sql:"incremented"`
+	Name   string `sql:"index(a)"`
+	Age    int    `sql:"index(a)"`
+	Int8   int8
+	Int16  int16
+	Int32  int32
+	Bool   bool
+	Object TestEncoded `sql:""`
+	Slice  []string
+	Map    map[string]int
+	D1     string `sql:"d1"`
+	D2     string `sql:"d2"`
+	D3     string `sql:"d3"`
+	D4     string `sql:"d4"`
+	Phone  string `sql:"-"`
 	labels Labels
 }
 
@@ -190,11 +191,46 @@ func (w *MutatingHandler) Error(err error) {
 func (w *MutatingHandler) End() {
 }
 
+func TestFields(t *testing.T) {
+	var err error
+	g := gomega.NewGomegaWithT(t)
+	table := Table{}
+	fields, err := table.Fields(&TestObject{})
+	g.Expect(err).To(gomega.BeNil())
+	// ALL
+	g.Expect(fieldNames(fields)).To(gomega.Equal(
+		[]string{
+			"Parent",
+			"Phone",
+			"RowID",
+			"PK",
+			"ID",
+			"Rev",
+			"Name",
+			"Age",
+			"Int8",
+			"Int16",
+			"Int32",
+			"Bool",
+			"Object",
+			"Slice",
+			"Map",
+			"D1",
+			"D2",
+			"D3",
+			"D4",
+		}))
+	// PK
+	g.Expect(table.PkField(fields).Name).To(gomega.Equal("PK"))
+	// Natural keys
+	g.Expect(fieldNames(table.KeyFields(fields))).To(gomega.Equal([]string{"ID"}))
+}
+
 func TestCRUD(t *testing.T) {
 	var err error
 	g := gomega.NewGomegaWithT(t)
 	DB := New(
-		"/tmp/test.db",
+		"/tmp/TestCRUD.db",
 		&Label{},
 		&PlainObject{},
 		&TestObject{})
@@ -292,7 +328,7 @@ func TestCRUD(t *testing.T) {
 func TestTransactions(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	DB := New(
-		"/tmp/test.db",
+		"/tmp/TestTransactions.db",
 		&TestObject{})
 	err := DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
@@ -323,7 +359,7 @@ func TestList(t *testing.T) {
 	var err error
 	g := gomega.NewGomegaWithT(t)
 	DB := New(
-		"/tmp/test.db",
+		"/tmp/TestList.db",
 		&TestObject{})
 	err = DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
@@ -544,11 +580,11 @@ func TestList(t *testing.T) {
 	g.Expect(count).To(gomega.Equal(int64(9)))
 }
 
-func TestIter(t *testing.T) {
+func TestFind(t *testing.T) {
 	var err error
 	g := gomega.NewGomegaWithT(t)
 	DB := New(
-		"/tmp/test.db",
+		"/tmp/TestFind.db",
 		&TestObject{})
 	err = DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
@@ -574,7 +610,7 @@ func TestIter(t *testing.T) {
 		g.Expect(err).To(gomega.BeNil())
 	}
 	// List all; detail level=0
-	itr, err := DB.Iter(
+	itr, err := DB.Find(
 		&TestObject{},
 		ListOptions{})
 	g.Expect(err).To(gomega.BeNil())
@@ -591,7 +627,7 @@ func TestIter(t *testing.T) {
 	}
 	g.Expect(len(list)).To(gomega.Equal(10))
 	// List all; detail level=0
-	itr, err = DB.Iter(
+	itr, err = DB.Find(
 		&TestObject{},
 		ListOptions{})
 	g.Expect(err).To(gomega.BeNil())
@@ -604,7 +640,7 @@ func TestIter(t *testing.T) {
 
 func TestWatch(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	DB := New("/tmp/test.db", &TestObject{})
+	DB := New("/tmp/TestWatch.db", &TestObject{})
 	err := DB.Open(true)
 	defer func() {
 		_ = DB.Close(false)
@@ -869,7 +905,7 @@ func TestCloseDB(t *testing.T) {
 
 func TestMutatingWatch(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	DB := New("/tmp/test.db", &TestObject{})
+	DB := New("/tmp/TestMutatingWatch.db", &TestObject{})
 	err := DB.Open(true)
 
 	g.Expect(err).To(gomega.BeNil())
@@ -918,7 +954,7 @@ func TestExecute(t *testing.T) {
 		ID   int    `sql:"pk"`
 		Name string `sql:""`
 	}
-	DB := New("/tmp/test.db", &Person{})
+	DB := New("/tmp/TestExecute.db", &Person{})
 	err := DB.Open(true)
 	defer func() {
 		_ = DB.Close(false)
@@ -937,7 +973,7 @@ func TestExecute(t *testing.T) {
 func __TestConcurrency(t *testing.T) {
 	var err error
 
-	DB := New("/tmp/test.db", &TestObject{})
+	DB := New("/tmp/TestConcurrency.db", &TestObject{})
 	DB.Open(true)
 	defer func() {
 		_ = DB.Close(false)
@@ -1084,4 +1120,12 @@ func __TestConcurrency(t *testing.T) {
 	}
 
 	fmt.Println(time.Since(mark))
+}
+
+func fieldNames(fields []*Field) (names []string) {
+	for _, f := range fields {
+		names = append(names, f.Name)
+	}
+
+	return
 }

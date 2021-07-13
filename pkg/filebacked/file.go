@@ -1,7 +1,6 @@
 /*
 File backing for collections.
 File format:
-   Length: 8 (uint64)
    | kind: 2 (uint16)
    | size: 8 (uint64)
    | object: n (gob encoded)
