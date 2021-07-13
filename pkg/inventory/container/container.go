@@ -15,21 +15,21 @@ import (
 var log = logging.WithName("container")
 
 //
-// Reconciler key.
+// Collector key.
 type Key core.ObjectReference
 
 //
-// A container manages a collection of `Reconciler`.
+// A container manages a collection of `Collector`.
 type Container struct {
-	// Collection of reconcilers.
-	content map[Key]Reconciler
+	// Collection of data collectors.
+	content map[Key]Collector
 	// Mutex - protect the map..
 	mutex sync.RWMutex
 }
 
 //
-// Get a reconciler by (CR) object.
-func (c *Container) Get(owner meta.Object) (Reconciler, bool) {
+// Get a collector by (CR) object.
+func (c *Container) Get(owner meta.Object) (Collector, bool) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
 	p, found := c.content[c.key(owner)]
@@ -37,11 +37,11 @@ func (c *Container) Get(owner meta.Object) (Reconciler, bool) {
 }
 
 //
-// List all reconcilers.
-func (c *Container) List() []Reconciler {
+// List all collectors.
+func (c *Container) List() []Collector {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	list := []Reconciler{}
+	list := []Collector{}
 	for _, r := range c.content {
 		list = append(list, r)
 	}
@@ -50,9 +50,9 @@ func (c *Container) List() []Reconciler {
 }
 
 //
-// Add a reconciler.
-func (c *Container) Add(reconciler Reconciler) (err error) {
-	owner := reconciler.Owner()
+// Add a collector.
+func (c *Container) Add(collector Collector) (err error) {
+	owner := collector.Owner()
 	key := c.key(owner)
 	add := func() {
 		c.mutex.Lock()
@@ -61,19 +61,19 @@ func (c *Container) Add(reconciler Reconciler) (err error) {
 			err = liberr.New("duplicate")
 			return
 		}
-		c.content[key] = reconciler
+		c.content[key] = collector
 	}
 	add()
 	if err != nil {
 		return
 	}
-	err = reconciler.Start()
+	err = collector.Start()
 	if err != nil {
 		return liberr.Wrap(err)
 	}
 
 	log.V(3).Info(
-		"reconciler added.",
+		"collector added.",
 		"owner",
 		key)
 
@@ -81,25 +81,25 @@ func (c *Container) Add(reconciler Reconciler) (err error) {
 }
 
 //
-// Replace a reconciler.
-func (c *Container) Replace(reconciler Reconciler) (p Reconciler, found bool, err error) {
-	key := c.key(reconciler.Owner())
+// Replace a collector.
+func (c *Container) Replace(collector Collector) (p Collector, found bool, err error) {
+	key := c.key(collector.Owner())
 	replace := func() {
 		c.mutex.Lock()
 		defer c.mutex.Unlock()
 		if p, found := c.content[key]; found {
 			p.Shutdown()
 		}
-		c.content[key] = reconciler
+		c.content[key] = collector
 	}
 	replace()
-	err = reconciler.Start()
+	err = collector.Start()
 	if err != nil {
 		err = liberr.Wrap(err)
 	}
 
 	log.V(3).Info(
-		"reconciler replaced.",
+		"collector replaced.",
 		"owner",
 		key)
 
@@ -107,8 +107,8 @@ func (c *Container) Replace(reconciler Reconciler) (p Reconciler, found bool, er
 }
 
 //
-// Delete the reconciler.
-func (c *Container) Delete(owner meta.Object) (p Reconciler, found bool) {
+// Delete the collector.
+func (c *Container) Delete(owner meta.Object) (p Collector, found bool) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	key := c.key(owner)
@@ -116,7 +116,7 @@ func (c *Container) Delete(owner meta.Object) (p Reconciler, found bool) {
 		delete(c.content, key)
 		p.Shutdown()
 		log.V(3).Info(
-			"reconciler deleted.",
+			"collector deleted.",
 			"owner",
 			key)
 	}
@@ -125,7 +125,7 @@ func (c *Container) Delete(owner meta.Object) (p Reconciler, found bool) {
 }
 
 //
-// Build a reconciler key for an object.
+// Build a collector key for an object.
 func (*Container) key(owner meta.Object) Key {
 	return Key{
 		Kind: ref.ToKind(owner),
@@ -134,21 +134,21 @@ func (*Container) key(owner meta.Object) Key {
 }
 
 //
-// Data reconciler.
-type Reconciler interface {
+// Data collector.
+type Collector interface {
 	// The name.
 	Name() string
-	// The resource that owns the reconciler.
+	// The resource that owns the collector.
 	Owner() meta.Object
-	// Start the reconciler.
+	// Start the collector.
 	// Expected to do basic validation, start a
 	// goroutine and return quickly.
 	Start() error
-	// Shutdown the reconciler.
+	// Shutdown the collector.
 	// Expected to disconnect, destroy created resources
 	// and return quickly.
 	Shutdown()
-	// The reconciler has achieved parity.
+	// The collector has achieved parity.
 	HasParity() bool
 	// Get the associated DB.
 	DB() model.DB
