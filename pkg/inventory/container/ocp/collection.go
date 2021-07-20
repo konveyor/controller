@@ -10,8 +10,8 @@ import (
 // Resource collection.
 type Collection interface {
 	predicate.Predicate
-	// Bind to a reconciler.
-	Bind(*Reconciler)
+	// Bind to a collector.
+	Bind(*Collector)
 	// Get kubernetes resource object.
 	Object() runtime.Object
 	// Initial reconcile.
@@ -21,12 +21,12 @@ type Collection interface {
 //
 // Base collection.
 type BaseCollection struct {
-	// Associated data reconciler.
-	Reconciler *Reconciler
+	// Associated data collector.
+	Collector *Collector
 }
 
 //
-// Associate with a reconciler.
-func (r *BaseCollection) Bind(reconciler *Reconciler) {
-	r.Reconciler = reconciler
+// Associate with a collector.
+func (r *BaseCollection) Bind(collector *Collector) {
+	r.Collector = collector
 }

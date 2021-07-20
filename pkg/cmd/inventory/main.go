@@ -171,41 +171,41 @@ func (h *Endpoint) AddRoutes(e *gin.Engine) {
 }
 
 //
-// Data reconciler.
-type DataReconciler struct {
+// Data collector.
+type Collector struct {
 	db model.DB
 }
 
-func (r *DataReconciler) Name() string {
+func (r *Collector) Name() string {
 	return "tester"
 }
 
-func (r *DataReconciler) Owner() meta.Object {
+func (r *Collector) Owner() meta.Object {
 	return &meta.ObjectMeta{
 		UID: "TEST",
 	}
 }
 
-func (r *DataReconciler) Start() error {
+func (r *Collector) Start() error {
 	return nil
 }
 
-func (r *DataReconciler) Shutdown() {
+func (r *Collector) Shutdown() {
 }
 
-func (r *DataReconciler) DB() model.DB {
+func (r *Collector) DB() model.DB {
 	return r.db
 }
 
-func (r *DataReconciler) HasParity() bool {
+func (r *Collector) HasParity() bool {
 	return true
 }
 
-func (r *DataReconciler) Test() error {
+func (r *Collector) Test() error {
 	return nil
 }
 
-func (r *DataReconciler) Reset() {
+func (r *Collector) Reset() {
 }
 
 func setup() (db model.DB, webSrv *web.WebServer) {
@@ -232,7 +232,7 @@ func setup() (db model.DB, webSrv *web.WebServer) {
 
 	//
 	// Build container.
-	dr := &DataReconciler{db}
+	dr := &Collector{db}
 	cnt := container.New()
 	err = cnt.Add(dr)
 	if err != nil {

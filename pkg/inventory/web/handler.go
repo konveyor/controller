@@ -80,8 +80,8 @@ type Parity struct {
 }
 
 //
-// Ensure reconciler has achieved parity.
-func (c *Parity) EnsureParity(r container.Reconciler, w time.Duration) int {
+// Ensure collector has achieved parity.
+func (c *Parity) EnsureParity(r container.Collector, w time.Duration) int {
 	wait := w
 	poll := time.Microsecond * 100
 	for {
