@@ -529,15 +529,17 @@ func (t Table) List(list interface{}, options ListOptions) error {
 		"sql",
 		stmt,
 		"params",
-		params)
+		params,
+		"matched",
+		lv.Len())
 
 	return nil
 }
 
 //
-// List the model in the DB.
+// Find models in the DB.
 // Qualified by the list options.
-func (t Table) Iter(model interface{}, options ListOptions) (itr fb.Iterator, err error) {
+func (t Table) Find(model interface{}, options ListOptions) (itr fb.Iterator, err error) {
 	fields, err := t.Fields(model)
 	if err != nil {
 		return
@@ -573,11 +575,13 @@ func (t Table) Iter(model interface{}, options ListOptions) (itr fb.Iterator, er
 	itr = list.Iter()
 
 	log.V(5).Info(
-		"table: list (iter) succeeded.",
+		"table: find succeeded.",
 		"sql",
 		stmt,
 		"params",
-		params)
+		params,
+		"matched",
+		itr.Len())
 
 	return
 }
@@ -639,13 +643,10 @@ func (t Table) Fields(model interface{}) ([]*Field, error) {
 		switch fv.Kind() {
 		case reflect.Struct:
 			sqlTag, found := ft.Tag.Lookup(Tag)
-			if !found {
-				nested, err := t.Fields(fv.Addr().Interface())
-				if err != nil {
-					return nil, nil
+			if found {
+				if sqlTag == "-" {
+					break
 				}
-				fields = append(fields, nested...)
-			} else {
 				fields = append(
 					fields,
 					&Field{
@@ -654,6 +655,12 @@ func (t Table) Fields(model interface{}) ([]*Field, error) {
 						Value: &fv,
 						Type:  &ft,
 					})
+			} else {
+				nested, err := t.Fields(fv.Addr().Interface())
+				if err != nil {
+					return nil, nil
+				}
+				fields = append(fields, nested...)
 			}
 		case reflect.Slice,
 			reflect.Map,
@@ -664,8 +671,8 @@ func (t Table) Fields(model interface{}) ([]*Field, error) {
 			reflect.Int16,
 			reflect.Int32,
 			reflect.Int64:
-			sqlTag, found := ft.Tag.Lookup(Tag)
-			if !found {
+			sqlTag, _ := ft.Tag.Lookup(Tag)
+			if sqlTag == "-" {
 				continue
 			}
 			fields = append(
@@ -1020,28 +1027,6 @@ var FkRegex = regexp.MustCompile(`(fk):(.+)(\()(.+)(\))`)
 
 //
 // Model (struct) Field
-// Tags:
-//   `sql:"pk"`
-//       The primary key.
-//   `sql:"pk(field;field;..)"`
-//       The generated primary key.
-//   `sql:"key"`
-//       The field is part of the natural key.
-//   `sql:"fk:T(F)"`
-//       Foreign key `T` = model type, `F` = model field.
-//   `sql:"unique(G)"`
-//       Unique index. `G` = unique-together fields.
-//   `sql:"index(G)"`
-//       Non-unique index. `G` = unique-together fields.
-//   `sql:"const"`
-//       The field is immutable and not included on update.
-//   `sql:"virtual"`
-//       The field is read-only and managed internally by the DB.
-//   `sql:"dn"`
-//       The field detail level.  n = level number (0-9).
-//   `sql:incremented`
-//       The field is auto-incremented.
-//
 type Field struct {
 	// reflect.Type of the field.
 	Type *reflect.StructField
