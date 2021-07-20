@@ -194,7 +194,7 @@ func TestCRUD(t *testing.T) {
 	var err error
 	g := gomega.NewGomegaWithT(t)
 	DB := New(
-		"/tmp/test.db",
+		"/tmp/test-crud.db",
 		&Label{},
 		&PlainObject{},
 		&TestObject{})
@@ -292,38 +292,38 @@ func TestCRUD(t *testing.T) {
 func TestTransactions(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	DB := New(
-		"/tmp/test.db",
+		"/tmp/test-transactions.db",
 		&TestObject{})
 	err := DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
-	// Begin
-	tx, err := DB.Begin()
-	defer tx.End()
-	g.Expect(err).To(gomega.BeNil())
-	g.Expect(tx.dbMutex).To(gomega.Equal(&DB.(*Client).dbMutex))
-	g.Expect(tx.journal).To(gomega.Equal(&DB.(*Client).journal))
-	object := &TestObject{
-		ID:   0,
-		Name: "Elmer",
+	for i := 0; i < 10; i++ {
+		// Begin
+		tx, err := DB.Begin()
+		defer tx.End()
+		g.Expect(err).To(gomega.BeNil())
+		object := &TestObject{
+			ID:   i,
+			Name: "Elmer",
+		}
+		err = tx.Insert(object)
+		g.Expect(err).To(gomega.BeNil())
+		// Get (not found)
+		object = &TestObject{ID: object.ID}
+		err = DB.Get(object)
+		g.Expect(errors.Is(err, NotFound)).To(gomega.BeTrue())
+		tx.Commit()
+		// Get (found)
+		object = &TestObject{ID: object.ID}
+		err = DB.Get(object)
+		g.Expect(err).To(gomega.BeNil())
 	}
-	err = tx.Insert(object)
-	g.Expect(err).To(gomega.BeNil())
-	// Get (not found)
-	object = &TestObject{ID: object.ID}
-	err = DB.Get(object)
-	g.Expect(errors.Is(err, NotFound)).To(gomega.BeTrue())
-	tx.Commit()
-	// Get (found)
-	object = &TestObject{ID: object.ID}
-	err = DB.Get(object)
-	g.Expect(err).To(gomega.BeNil())
 }
 
 func TestList(t *testing.T) {
 	var err error
 	g := gomega.NewGomegaWithT(t)
 	DB := New(
-		"/tmp/test.db",
+		"/tmp/test-list.db",
 		&TestObject{})
 	err = DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
@@ -548,7 +548,7 @@ func TestIter(t *testing.T) {
 	var err error
 	g := gomega.NewGomegaWithT(t)
 	DB := New(
-		"/tmp/test.db",
+		"/tmp/test-iter.db",
 		&TestObject{})
 	err = DB.Open(true)
 	g.Expect(err).To(gomega.BeNil())
@@ -604,7 +604,7 @@ func TestIter(t *testing.T) {
 
 func TestWatch(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	DB := New("/tmp/test.db", &TestObject{})
+	DB := New("/tmp/test-watch.db", &TestObject{})
 	err := DB.Open(true)
 	defer func() {
 		_ = DB.Close(false)
@@ -825,7 +825,7 @@ func TestWatch(t *testing.T) {
 			break
 		}
 	}
-	g.Expect(len(watchA.journal.watchList)).To(gomega.Equal(0))
+	g.Expect(len(watchA.journal.watches)).To(gomega.Equal(0))
 	g.Expect(ended).To(gomega.BeTrue())
 	g.Expect(handlerA.done).To(gomega.BeTrue())
 	g.Expect(handlerB.done).To(gomega.BeTrue())
@@ -835,7 +835,7 @@ func TestWatch(t *testing.T) {
 
 func TestCloseDB(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	DB := New("/tmp/test.db", &TestObject{})
+	DB := New("/tmp/test-close-db.db", &TestObject{})
 	err := DB.Open(true)
 	defer func() {
 		_ = DB.Close(false)
@@ -856,6 +856,9 @@ func TestCloseDB(t *testing.T) {
 	g.Expect(handler.started).To(gomega.BeTrue())
 	g.Expect(handler.done).To(gomega.BeFalse())
 	_ = DB.Close(true)
+	for _, session := range DB.(*Client).pool.sessions {
+		g.Expect(session.closed).To(gomega.BeTrue())
+	}
 	for i := 0; i < 100; i++ {
 		if !watch.done {
 			time.Sleep(50 * time.Millisecond)
@@ -869,7 +872,7 @@ func TestCloseDB(t *testing.T) {
 
 func TestMutatingWatch(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	DB := New("/tmp/test.db", &TestObject{})
+	DB := New("/tmp/test-mutating-watch.db", &TestObject{})
 	err := DB.Open(true)
 
 	g.Expect(err).To(gomega.BeNil())
@@ -918,7 +921,7 @@ func TestExecute(t *testing.T) {
 		ID   int    `sql:"pk"`
 		Name string `sql:""`
 	}
-	DB := New("/tmp/test.db", &Person{})
+	DB := New("/tmp/test-execute.db", &Person{})
 	err := DB.Open(true)
 	defer func() {
 		_ = DB.Close(false)
@@ -932,12 +935,76 @@ func TestExecute(t *testing.T) {
 	g.Expect(result.RowsAffected()).To(gomega.Equal(int64(1)))
 }
 
+func TestSession(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	DB := New("/tmp/test-session.db", &TestObject{})
+	DB.Open(true)
+	defer func() {
+		_ = DB.Close(false)
+	}()
+
+	pool := DB.(*Client).pool
+
+	w := pool.Writer()
+	g.Expect(w.id).To(gomega.Equal(0))
+	for n := 1; n < 11; n++ {
+		r := pool.Reader()
+		g.Expect(r.id).To(gomega.Equal(n))
+	}
+}
+
+//
+// Remove leading __ to enable.
+func __TestDbLocked(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	DB := New("/tmp/test-db-locked.db", &TestObject{}, &PlainObject{})
+	err := DB.Open(true)
+	defer func() {
+		_ = DB.Close(false)
+	}()
+	errChan := make(chan error)
+	endChan := make(chan int)
+	go func() {
+		tx, _ := DB.Begin()
+		defer func() {
+			errChan <- err
+			close(errChan)
+			_ = tx.End()
+		}()
+		for i := 0; i < 20000; i++ {
+			object := &TestObject{
+				ID:   i,
+				Name: "Elmer",
+			}
+			err = tx.Insert(object)
+			errChan <- err
+			if err != nil {
+				return
+			}
+		}
+		err = tx.Commit()
+	}()
+	go func() {
+		defer close(endChan)
+		n := int64(0)
+		for err = range errChan {
+			g.Expect(err).To(gomega.BeNil())
+			n, err = DB.Count(&TestObject{}, nil)
+			g.Expect(err).To(gomega.BeNil())
+		}
+		fmt.Printf("Count:%d", n)
+	}()
+
+	for _ = range endChan {
+	}
+}
+
 //
 // Remove leading __ to enable.
 func __TestConcurrency(t *testing.T) {
 	var err error
 
-	DB := New("/tmp/test.db", &TestObject{})
+	DB := New("/tmp/test-concurrency.db", &TestObject{})
 	DB.Open(true)
 	defer func() {
 		_ = DB.Close(false)
