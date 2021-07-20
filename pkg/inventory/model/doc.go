@@ -3,8 +3,12 @@
 // needs of the `container` package.
 // Each entity (table) is modeled by a struct.  Each field (column)
 // is Described using tags:
+//    sql: "-"
+//       The field is omitted.
 //   `sql:"pk"`
 //       The primary key.
+//   `sql:"pk(field;field;..)"`
+//       The generated primary key.
 //   `sql:"key"`
 //       The field is part of the natural key.
 //   `sql:"fk:T(F)"`
@@ -19,6 +23,9 @@
 //       The field is read-only and managed internally by the DB.
 //   `sql:"dn"`
 //       The field detail level.  n = level number (0-9).
+//   `sql:incremented`
+//       The field is auto-incremented.
+//
 // Each struct must implement the `Model` interface.
 // Basic CRUD operations may be performed on each model using
 // the `DB` interface which together with the `Model` interface
@@ -31,13 +38,12 @@
 //       ID    string `sql:"pk"`
 //       First string `sql:"key"`
 //       Last  string `sql:"key"
-//       Age   int    `sql:""`
+//       Age   int
 //   }
 //
-//   func (p *Person) Pk() string {...}
-//   func (p *Person) Equals(other Model) bool {...}
-//   func (p *Person) Labels() {...}
-//   func (p *Person) String() string {...}
+//   func (p *Person) Pk() string {
+//       return p.ID
+//   }
 //
 // Insert the model:
 //   person := &Person{
