@@ -292,12 +292,7 @@ type Journal struct {
 	// Logger.
 	log logr.Logger
 	// List of registered watches.
-	watchList []*Watch
-	// Recorded (staged) event list.
-	// file-backed list of:
-	//   Event, model, ..,
-	//   Event, model, ..,
-	staged fb.List
+	watches []*Watch
 }
 
 //
@@ -320,7 +315,7 @@ func (r *Journal) Watch(model Model, handler EventHandler) (*Watch, error) {
 		journal: r,
 		log:     log,
 	}
-	r.watchList = append(r.watchList, watch)
+	r.watches = append(r.watches, watch)
 	watch.queue = make(chan fb.Iterator, 250)
 
 	r.log.V(3).Info(
@@ -337,7 +332,7 @@ func (r *Journal) End(watch *Watch) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	kept := []*Watch{}
-	for _, w := range r.watchList {
+	for _, w := range r.watches {
 		if w != watch {
 			kept = append(kept, w)
 			continue
@@ -349,123 +344,30 @@ func (r *Journal) End(watch *Watch) {
 			watch.String())
 	}
 
-	r.watchList = kept
-}
-
-//
-// A model has been created.
-// Record the event in the staged list.
-func (r *Journal) Created(model Model, committed bool) (err error) {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	if !r.hasWatch(model) {
-		return
-	}
-	event := Event{
-		ID:     serial.next(1),
-		Action: Created,
-		Model:  model,
-	}
-	event.append(&r.staged)
-	if committed {
-		r.committed()
-	}
-
-	r.log.V(4).Info(
-		"event staged.",
-		"event",
-		event.String())
-
-	return
-}
-
-//
-// A model has been updated.
-// Record the event in the staged list.
-func (r *Journal) Updated(model Model, updated Model, committed bool) (err error) {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	if !r.hasWatch(model) {
-		return
-	}
-	event := Event{
-		ID:      serial.next(1),
-		Action:  Updated,
-		Model:   model,
-		Updated: updated,
-	}
-	event.append(&r.staged)
-	if committed {
-		r.committed()
-	}
-
-	r.log.V(4).Info(
-		"event staged.",
-		"event",
-		event.String())
-
-	return
-}
-
-//
-// A model has been deleted.
-// Record the event in the staged list.
-func (r *Journal) Deleted(model Model, committed bool) (err error) {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	if !r.hasWatch(model) {
-		return
-	}
-	event := Event{
-		ID:     serial.next(1),
-		Action: Deleted,
-		Model:  model,
-	}
-	event.append(&r.staged)
-	if committed {
-		r.committed()
-	}
-
-	r.log.V(4).Info(
-		"event staged.",
-		"event",
-		event.String())
-
-	return
+	r.watches = kept
 }
 
 //
 // Transaction committed.
 // Recorded (staged) events are forwarded to watches.
-func (r *Journal) Committed() {
+func (r *Journal) Report(staged *fb.List) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	r.log.V(4).Info(
-		"staged committed.",
+	for _, w := range r.watches {
+		w.notify(staged.Iter())
+	}
+
+	r.log.V(3).Info(
+		"Events reported.",
 		"count",
-		r.staged.Len())
-	r.committed()
-}
-
-//
-// Reset the journal.
-// Discard recorded (staged) events.
-func (r *Journal) Reset() {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	r.log.V(4).Info("staged reset.")
-
-	r.staged.Close()
-	r.staged = fb.List{}
+		staged.Len())
 }
 
 //
 // Close the journal.
 // End all watches.
 func (r *Journal) Close() (err error) {
-	r.staged.Close()
-	for _, w := range r.watchList {
+	for _, w := range r.watches {
 		r.End(w)
 	}
 
@@ -475,23 +377,10 @@ func (r *Journal) Close() (err error) {
 }
 
 //
-// Transaction committed.
-// Recorded (staged) events forwarded to watches.
-func (r *Journal) committed() {
-	for _, w := range r.watchList {
-		itr := r.staged.Iter()
-		w.notify(itr)
-	}
-
-	r.staged.Close()
-	r.staged = fb.List{}
-}
-
-//
 // Model is being watched.
 // Determine if there a watch interested in the model.
 func (r *Journal) hasWatch(model Model) bool {
-	for _, w := range r.watchList {
+	for _, w := range r.watches {
 		if w.Match(model) {
 			return true
 		}

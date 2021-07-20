@@ -124,9 +124,6 @@ func New(path string, models ...interface{}) DB {
 	client.journal.log = logging.WithName("db|journal").WithValues(
 		"db",
 		path)
-	client.labeler.log = logging.WithName("db|labeler").WithValues(
-		"db",
-		path)
 
 	return client
 }
