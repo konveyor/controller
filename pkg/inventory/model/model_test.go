@@ -84,8 +84,9 @@ func (m *TestObject) Labels() Labels {
 
 // received event.
 type TestEvent struct {
-	action uint8
-	model  *TestObject
+	action  uint8
+	model   *TestObject
+	updated *TestObject
 }
 
 type TestHandler struct {
@@ -122,7 +123,11 @@ func (w *TestHandler) Created(e Event) {
 
 func (w *TestHandler) Updated(e Event) {
 	if object, cast := e.Model.(*TestObject); cast {
-		w.all = append(w.all, TestEvent{action: e.Action, model: object})
+		w.all = append(w.all, TestEvent{
+			action:  e.Action,
+			model:   object,
+			updated: e.Updated.(*TestObject),
+		})
 		w.updated = append(w.updated, object.ID)
 	}
 }
@@ -310,6 +315,7 @@ func TestCRUD(t *testing.T) {
 	objA.Bool = false
 	err = DB.Update(objA)
 	g.Expect(err).To(gomega.BeNil())
+	g.Expect(objA.Rev).To(gomega.Equal(2))
 	// Get
 	objB = &TestObject{ID: objA.ID}
 	err = DB.Get(objB)
@@ -675,21 +681,20 @@ func TestWatch(t *testing.T) {
 	g.Expect(watchB).ToNot(gomega.BeNil())
 	// Update
 	for i := 0; i < N; i++ {
-		object := &TestObject{
-			ID:     i,
-			Name:   "Fudd",
-			Age:    18,
-			Int8:   8,
-			Int16:  16,
-			Int32:  32,
-			Bool:   true,
-			Object: TestEncoded{Name: "json"},
-			Slice:  []string{"hello", "world"},
-			Map:    map[string]int{"A": 1, "B": 2},
-			D4:     "d-4",
-			labels: Labels{
-				"id": fmt.Sprintf("v%d", i),
-			},
+		object := &TestObject{ID: i}
+		_ = DB.Get(object)
+		object.Name = "Fudd"
+		object.Age = 18
+		object.Int8 = 8
+		object.Int16 = 16
+		object.Int32 = 32
+		object.Bool = true
+		object.Object = TestEncoded{Name: "json"}
+		object.Slice = []string{"hello", "world"}
+		object.Map = map[string]int{"A": 1, "B": 2}
+		object.D4 = "d-4"
+		object.labels = Labels{
+			"id": fmt.Sprintf("v%d", i),
 		}
 		err = DB.Update(object)
 		g.Expect(err).To(gomega.BeNil())
@@ -789,6 +794,12 @@ func TestWatch(t *testing.T) {
 			return
 		}
 		for i := 0; i < len(all); i++ {
+			if h.all[i].action == Updated {
+				if h.all[i].updated.Rev != h.all[i].model.Rev+1 ||
+					h.all[i].updated.Name != "Fudd" {
+					return
+				}
+			}
 			if all[i].action != h.all[i].action ||
 				all[i].model.ID != h.all[i].model.ID {
 				return
