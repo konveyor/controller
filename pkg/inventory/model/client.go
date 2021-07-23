@@ -528,8 +528,8 @@ func (r *Tx) Update(model Model) (err error) {
 	event := Event{
 		ID:      serial.next(1),
 		Action:  Updated,
-		Model:   model,
-		Updated: current,
+		Model:   current,
+		Updated: model,
 	}
 	event.append(r.staged)
 	err = r.labeler.Replace(model)
