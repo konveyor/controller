@@ -306,14 +306,14 @@ func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) 
 				r.pool.Writer())
 		}
 	}
-	resumeWriting := func() {
+	unblockWriting := func() {
 		for _, w := range writers {
 			w.Return()
 		}
 	}
 	if options.Snapshot {
 		blockWriting()
-		defer resumeWriting()
+		defer unblockWriting()
 		reader := r.pool.Reader()
 		defer reader.Return()
 		table := Table{reader.db}
