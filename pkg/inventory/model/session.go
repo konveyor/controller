@@ -79,6 +79,10 @@ type Pool struct {
 		writer chan *Session
 		reader chan *Session
 	}
+	// Number of writer.
+	nWriter int
+	// Number of reader.
+	nReader int
 }
 
 //
@@ -94,6 +98,8 @@ func (p *Pool) Open(nWriter, nReader int, path string, journal *Journal) (err er
 		}
 	}()
 	p.journal = journal
+	p.nWriter = nWriter
+	p.nReader = nReader
 	total := nWriter + nReader
 	p.next.writer = make(chan *Session, nWriter)
 	p.next.reader = make(chan *Session, nReader)
@@ -145,7 +151,6 @@ func (p *Pool) Writer() *Session {
 	return p.nextSession(p.next.writer)
 }
 
-//
 // Get the next reader.
 // This may block until available.
 func (p *Pool) Reader() *Session {

@@ -296,25 +296,37 @@ func (r *Client) Delete(model Model) (err error) {
 // Watch model events.
 func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) {
 	mark := time.Now()
-	w, err = r.journal.Watch(model, handler)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			w.End()
-			w = nil
-		}
-	}()
 	options := handler.Options()
 	var snapshot fb.Iterator
+	var writers []*Session
+	blockWriting := func() {
+		for n := 0; n < r.pool.nWriter; n++ {
+			writers = append(
+				writers,
+				r.pool.Writer())
+		}
+	}
+	resumeWriting := func() {
+		for _, w := range writers {
+			w.Return()
+		}
+	}
 	if options.Snapshot {
-		snapshot, err = r.Find(model, ListOptions{Detail: 1})
+		blockWriting()
+		defer resumeWriting()
+		reader := r.pool.Reader()
+		defer reader.Return()
+		table := Table{reader.db}
+		snapshot, err = table.Find(model, ListOptions{Detail: 1})
 		if err != nil {
 			return
 		}
 	} else {
 		snapshot = &fb.EmptyIterator{}
+	}
+	w, err = r.journal.Watch(model, handler)
+	if err != nil {
+		return
 	}
 
 	w.Start(snapshot)
