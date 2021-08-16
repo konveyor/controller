@@ -501,7 +501,7 @@ func (r *Tx) Insert(model Model) (err error) {
 		return
 	}
 
-	r.log.V(4).Info(
+	r.log.V(3).Info(
 		"insert succeeded.",
 		"model",
 		Describe(model),
@@ -537,7 +537,7 @@ func (r *Tx) Update(model Model) (err error) {
 		return
 	}
 
-	r.log.V(4).Info(
+	r.log.V(3).Info(
 		"update succeeded.",
 		"model",
 		Describe(model),
@@ -573,7 +573,7 @@ func (r *Tx) Delete(model Model) (err error) {
 		return
 	}
 
-	r.log.V(4).Info(
+	r.log.V(3).Info(
 		"delete succeeded.",
 		"model",
 		Describe(model),

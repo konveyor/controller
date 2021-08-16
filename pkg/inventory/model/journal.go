@@ -356,11 +356,6 @@ func (r *Journal) Report(staged *fb.List) {
 	for _, w := range r.watches {
 		w.notify(staged.Iter())
 	}
-
-	r.log.V(3).Info(
-		"Events reported.",
-		"count",
-		staged.Len())
 }
 
 //

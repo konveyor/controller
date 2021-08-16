@@ -27,8 +27,9 @@ Package:
     - Info(3):
       - database: lifecycle.
       - journal: journal and watch lifecycle.
+      - model: insert,update,delete.
     - Info(4):
-      - client: (db) transaction lifecycle;model CRUD.
+      - client: (db) transaction lifecycle;model get,list.
       - journal: event staging.
       - watch: lifecycle.
     - Info(5):
