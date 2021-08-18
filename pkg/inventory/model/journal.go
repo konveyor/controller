@@ -31,12 +31,26 @@ var (
 type Event struct {
 	// ID.
 	ID uint64
+	// Labels.
+	Labels []string
 	// The event subject.
 	Model Model
 	// The event action (created|updated|deleted).
 	Action uint8
 	// The updated model.
 	Updated Model
+}
+
+//
+// Get whether the event has the specified label.
+func (r *Event) HasLabel(label string) bool {
+	for _, l := range r.Labels {
+		if l == label {
+			return true
+		}
+	}
+
+	return false
 }
 
 //
@@ -77,6 +91,7 @@ func (r *Event) String() string {
 func (r *Event) append(list *fb.List) {
 	list.Append(Event{
 		ID:     r.ID,
+		Labels: r.Labels,
 		Action: r.Action,
 	})
 	list.Append(r.Model)

@@ -109,6 +109,8 @@ type ResourceBuilder func(model.Model) interface{}
 type Event struct {
 	// ID
 	ID uint64
+	// Labels.
+	Labels []string
 	// Action.
 	Action uint8
 	// Affected Resource.
@@ -284,6 +286,7 @@ func (r *WatchWriter) send(e model.Event) {
 	}
 	event := Event{
 		ID:     e.ID,
+		Labels: e.Labels,
 		Action: e.Action,
 	}
 	if e.Model != nil {

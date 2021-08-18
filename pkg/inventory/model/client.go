@@ -28,7 +28,7 @@ type DB interface {
 	// Count based on the specified model.
 	Count(Model, Predicate) (int64, error)
 	// Begin a transaction.
-	Begin() (*Tx, error)
+	Begin(...string) (*Tx, error)
 	// Insert a model.
 	Insert(Model) error
 	// Update a model.
@@ -203,7 +203,7 @@ func (r *Client) Count(model Model, predicate Predicate) (n int64, err error) {
 
 //
 // Begin a transaction.
-func (r *Client) Begin() (tx *Tx, error error) {
+func (r *Client) Begin(labels ...string) (tx *Tx, error error) {
 	mark := time.Now()
 	session := r.pool.Writer()
 	realTx, err := session.Begin()
@@ -224,6 +224,7 @@ func (r *Client) Begin() (tx *Tx, error error) {
 			log: r.log,
 		},
 		started: time.Now(),
+		labels:  labels,
 		log:     r.log,
 	}
 
@@ -387,12 +388,14 @@ type Tx struct {
 	real *sql.Tx
 	// Staged events.
 	staged *fb.List
-	// Label manager.
+	// Manage labels associated with models.
 	labeler Labeler
 	// Logger.
 	log logr.Logger
 	// Started timestamp.
 	started time.Time
+	// Labels associated with the transaction.
+	labels []string
 	// Ended.
 	ended bool
 }
@@ -492,6 +495,7 @@ func (r *Tx) Insert(model Model) (err error) {
 	}
 	event := Event{
 		ID:     serial.next(1),
+		Labels: r.labels,
 		Action: Created,
 		Model:  model,
 	}
@@ -527,6 +531,7 @@ func (r *Tx) Update(model Model) (err error) {
 	}
 	event := Event{
 		ID:      serial.next(1),
+		Labels:  r.labels,
 		Action:  Updated,
 		Model:   current,
 		Updated: model,
@@ -564,6 +569,7 @@ func (r *Tx) Delete(model Model) (err error) {
 	}
 	event := Event{
 		ID:     serial.next(1),
+		Labels: r.labels,
 		Action: Deleted,
 		Model:  model,
 	}
