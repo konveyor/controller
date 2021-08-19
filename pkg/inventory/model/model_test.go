@@ -172,17 +172,22 @@ func (w *MutatingHandler) Created(e Event) {
 	tx, _ := w.DB.Begin()
 	tx.Get(e.Model)
 	e.Model.(*TestObject).Age++
-	tx.Update(e.Model)
-	tx.Commit()
+	_ = tx.Update(e.Model)
+	_ = tx.Commit()
 	w.created = append(w.created, e.Model.(*TestObject).ID)
 }
 
 func (w *MutatingHandler) Updated(e Event) {
-	tx, _ := w.DB.Begin()
+	label := "echo"
+	if e.HasLabel(label) {
+		// ignore the echo event.
+		return
+	}
+	tx, _ := w.DB.Begin(label)
 	tx.Get(e.Model)
 	e.Model.(*TestObject).Age++
-	tx.Update(e.Model)
-	tx.Commit()
+	_ = tx.Update(e.Model)
+	_ = tx.Commit()
 	w.updated = append(w.updated, e.Model.(*TestObject).ID)
 }
 
@@ -955,7 +960,7 @@ func TestMutatingWatch(t *testing.T) {
 
 	for {
 		time.Sleep(time.Millisecond * 10)
-		if len(handlerA.updated) > 100 {
+		if len(handlerA.updated) == N*2 {
 			break
 		}
 	}
