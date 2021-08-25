@@ -23,7 +23,9 @@ const (
 	// SQL tag.
 	Tag = "sql"
 	// Max detail level.
-	MaxDetail = 10
+	MaxDetail = 9
+	// Default detail level.
+	DefaultDetail = MaxDetail
 )
 
 //
@@ -151,6 +153,8 @@ var (
 	PredicateTypeErr = errors.New("predicate type not valid for field")
 	// Invalid predicate value.
 	PredicateValueErr = errors.New("predicate value not valid")
+	// Invalid detail level.
+	DetailErr = errors.New("detail level must be <= MaxDetail")
 )
 
 //
@@ -369,7 +373,7 @@ func (t Table) Insert(model interface{}) error {
 
 //
 // Update the model in the DB.
-// Expects the primary key (PK) or natural keys to be set.
+// Expects the primary key (PK) to be set.
 func (t Table) Update(model interface{}) error {
 	fields, err := t.Fields(model)
 	if err != nil {
@@ -407,7 +411,7 @@ func (t Table) Update(model interface{}) error {
 
 //
 // Delete the model in the DB.
-// Expects the primary key (PK) or natural keys to be set.
+// Expects the primary key (PK) to be set.
 func (t Table) Delete(model interface{}) error {
 	fields, err := t.Fields(model)
 	if err != nil {
@@ -443,7 +447,7 @@ func (t Table) Delete(model interface{}) error {
 
 //
 // Get the model in the DB.
-// Expects the primary key (PK) or natural keys to be set.
+// Expects the primary key (PK) to be set.
 // Fetch the row and populate the fields in the model.
 func (t Table) Get(model interface{}) error {
 	fields, err := t.Fields(model)
@@ -589,8 +593,7 @@ func (t Table) Find(model interface{}, options ListOptions) (itr fb.Iterator, er
 //
 // Count the models in the DB.
 // Qualified by the model field values and list options.
-// Expects natural keys to be set.
-// Else, ALL models counted.
+// Else, ALL models are counted.
 func (t Table) Count(model interface{}, predicate Predicate) (int64, error) {
 	fields, err := t.Fields(model)
 	if err != nil {
@@ -1026,6 +1029,10 @@ var IndexRegex = regexp.MustCompile(`(index)(\()(.+)(\))`)
 var FkRegex = regexp.MustCompile(`(fk):(.+)(\()(.+)(\))`)
 
 //
+// Regex used for detail.
+var DetailRegex = regexp.MustCompile(`(d)([0-9]+)`)
+
+//
 // Model (struct) Field
 type Field struct {
 	// reflect.Type of the field.
@@ -1061,6 +1068,9 @@ func (f *Field) Validate() error {
 		if f.Pk() {
 			return liberr.Wrap(PkTypeErr)
 		}
+	}
+	if f.Detail() > MaxDetail {
+		return liberr.Wrap(DetailErr)
 	}
 
 	return nil
@@ -1244,7 +1254,7 @@ func (f *Field) WithFields() (withFields map[string]bool) {
 	for _, opt := range strings.Split(f.Tag, ",") {
 		opt = strings.TrimSpace(opt)
 		m := PkRegex.FindStringSubmatch(opt)
-		if m != nil && len(m) == 6 {
+		if len(m) == 6 {
 			for _, name := range strings.Split(m[4], ";") {
 				name = strings.TrimSpace(name)
 				if len(name) > 0 {
@@ -1291,7 +1301,7 @@ func (f *Field) Unique() []string {
 	for _, opt := range strings.Split(f.Tag, ",") {
 		opt = strings.TrimSpace(opt)
 		m := UniqueRegex.FindStringSubmatch(opt)
-		if m != nil && len(m) == 5 {
+		if len(m) == 5 {
 			list = append(list, m[3])
 		}
 	}
@@ -1306,7 +1316,7 @@ func (f *Field) Index() []string {
 	for _, opt := range strings.Split(f.Tag, ",") {
 		opt = strings.TrimSpace(opt)
 		m := IndexRegex.FindStringSubmatch(opt)
-		if m != nil && len(m) == 5 {
+		if len(m) == 5 {
 			list = append(list, m[3])
 		}
 	}
@@ -1320,7 +1330,7 @@ func (f *Field) Fk() *FK {
 	for _, opt := range strings.Split(f.Tag, ",") {
 		opt = strings.TrimSpace(opt)
 		m := FkRegex.FindStringSubmatch(opt)
-		if m != nil && len(m) == 6 {
+		if len(m) == 6 {
 			return &FK{
 				Table: m[2],
 				Field: m[4],
@@ -1444,13 +1454,15 @@ func (f *Field) Encoded() (encoded bool) {
 //
 // Detail level.
 // Defaults:
-//   0 = primary and natural fields.
-//   1 = other fields.
+//   Key fields = 0.
+//        Other = DefaultDetail
 func (f *Field) Detail() (level int) {
-	level = 1
-	for n := 0; n < MaxDetail; n++ {
-		if f.hasOpt(fmt.Sprintf("d%d", n)) {
-			level = n
+	level = DefaultDetail
+	for _, opt := range strings.Split(f.Tag, ",") {
+		opt = strings.TrimSpace(opt)
+		m := DetailRegex.FindStringSubmatch(opt)
+		if len(m) == 3 {
+			level, _ = strconv.Atoi(m[2])
 			return
 		}
 	}

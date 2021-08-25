@@ -398,7 +398,7 @@ func TestList(t *testing.T) {
 		err = DB.Insert(object)
 		g.Expect(err).To(gomega.BeNil())
 	}
-	// List all; detail level=0
+	// List detail level=0
 	list := []TestObject{}
 	err = DB.List(&list, ListOptions{})
 	g.Expect(err).To(gomega.BeNil())
@@ -414,8 +414,8 @@ func TestList(t *testing.T) {
 	err = DB.List(&list, ListOptions{Detail: 1})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(10))
-	g.Expect(list[0].Name).To(gomega.Equal("Elmer"))
-	g.Expect(len(list[0].Slice)).To(gomega.Equal(2))
+	g.Expect(list[0].Name).To(gomega.Equal(""))
+	g.Expect(list[0].Slice).To(gomega.BeNil())
 	g.Expect(list[0].D1).To(gomega.Equal("d-1"))
 	g.Expect(list[0].D2).To(gomega.Equal(""))
 	g.Expect(list[0].D3).To(gomega.Equal(""))
@@ -425,8 +425,8 @@ func TestList(t *testing.T) {
 	err = DB.List(&list, ListOptions{Detail: 2})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(10))
-	g.Expect(list[0].Name).To(gomega.Equal("Elmer"))
-	g.Expect(len(list[0].Slice)).To(gomega.Equal(2))
+	g.Expect(list[0].Name).To(gomega.Equal(""))
+	g.Expect(list[0].Slice).To(gomega.BeNil())
 	g.Expect(list[0].D1).To(gomega.Equal("d-1"))
 	g.Expect(list[0].D2).To(gomega.Equal("d-2"))
 	g.Expect(list[0].D3).To(gomega.Equal(""))
@@ -436,8 +436,8 @@ func TestList(t *testing.T) {
 	err = DB.List(&list, ListOptions{Detail: 3})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(10))
-	g.Expect(list[0].Name).To(gomega.Equal("Elmer"))
-	g.Expect(len(list[0].Slice)).To(gomega.Equal(2))
+	g.Expect(list[0].Name).To(gomega.Equal(""))
+	g.Expect(list[0].Slice).To(gomega.BeNil())
 	g.Expect(list[0].D1).To(gomega.Equal("d-1"))
 	g.Expect(list[0].D2).To(gomega.Equal("d-2"))
 	g.Expect(list[0].D3).To(gomega.Equal("d-3"))
@@ -445,6 +445,17 @@ func TestList(t *testing.T) {
 	// List detail level=4
 	list = []TestObject{}
 	err = DB.List(&list, ListOptions{Detail: 4})
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(10))
+	g.Expect(list[0].Name).To(gomega.Equal(""))
+	g.Expect(list[0].Slice).To(gomega.BeNil())
+	g.Expect(list[0].D1).To(gomega.Equal("d-1"))
+	g.Expect(list[0].D2).To(gomega.Equal("d-2"))
+	g.Expect(list[0].D3).To(gomega.Equal("d-3"))
+	g.Expect(list[0].D4).To(gomega.Equal("d-4"))
+	// List detail level=10
+	list = []TestObject{}
+	err = DB.List(&list, ListOptions{Detail: MaxDetail})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(10))
 	g.Expect(list[0].Name).To(gomega.Equal("Elmer"))
@@ -524,7 +535,7 @@ func TestList(t *testing.T) {
 		&list,
 		ListOptions{
 			Predicate: Gt("RowID", N/2),
-			Detail:    1,
+			Detail:    MaxDetail,
 		})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(N / 2))
@@ -535,7 +546,7 @@ func TestList(t *testing.T) {
 		&list,
 		ListOptions{
 			Predicate: Eq("RowID", Field{Name: "int8"}),
-			Detail:    1,
+			Detail:    MaxDetail,
 		})
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(1))
