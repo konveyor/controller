@@ -156,7 +156,7 @@ func (h Endpoint) List(ctx *gin.Context) {
 	}
 	// List request.
 	list := []Model{}
-	err := h.db.List(&list, model.ListOptions{Detail: 1})
+	err := h.db.List(&list, model.ListOptions{Detail: model.MaxDetail})
 	if err != nil {
 		ctx.Status(http.StatusInternalServerError)
 		return

@@ -310,7 +310,7 @@ func (r *Client) Watch(model Model, handler EventHandler) (w *Watch, err error) 
 	options := handler.Options()
 	var snapshot fb.Iterator
 	if options.Snapshot {
-		snapshot, err = r.Find(model, ListOptions{Detail: 1})
+		snapshot, err = r.Find(model, ListOptions{Detail: MaxDetail})
 		if err != nil {
 			return
 		}

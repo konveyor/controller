@@ -22,7 +22,7 @@
 //   `sql:"virtual"`
 //       The field is read-only and managed internally by the DB.
 //   `sql:"dn"`
-//       The field detail level.  n = level number (0-9).
+//       The field detail level.  n = level number.
 //   `sql:incremented`
 //       The field is auto-incremented.
 //
