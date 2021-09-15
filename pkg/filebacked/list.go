@@ -84,7 +84,20 @@ type List struct {
 //
 // Append an object.
 func (l *List) Append(object interface{}) {
-	l.writer.Append(object)
+	switch object.(type) {
+	case Iterator:
+		itr := object.(Iterator)
+		for {
+			object, hasNext := itr.Next()
+			if hasNext {
+				l.writer.Append(object)
+			} else {
+				break
+			}
+		}
+	default:
+		l.writer.Append(object)
+	}
 }
 
 //

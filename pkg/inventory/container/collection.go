@@ -215,11 +215,11 @@ type DefaultShepherd struct {
 //
 // Model comparison.
 func (r *DefaultShepherd) Equals(mA, mB model.Model) bool {
-	fieldsA, _ := model.Table{}.Fields(mA)
-	fieldsB, _ := model.Table{}.Fields(mB)
-	for i := 0; i < len(fieldsA); i++ {
-		fA := fieldsA[i]
-		fB := fieldsB[i]
+	mdA, _ := model.Inspect(mA)
+	mdB, _ := model.Inspect(mB)
+	for i := 0; i < len(mdA.Fields); i++ {
+		fA := mdA.Fields[i]
+		fB := mdB.Fields[i]
 		if r.ignored(fA) {
 			continue
 		}
@@ -236,11 +236,11 @@ func (r *DefaultShepherd) Equals(mA, mB model.Model) bool {
 //
 // Update model A (stored) with model B (desired).
 func (r *DefaultShepherd) Update(mA, mB model.Model) {
-	fieldsA, _ := model.Table{}.Fields(mA)
-	fieldsB, _ := model.Table{}.Fields(mB)
-	for i := 0; i < len(fieldsA); i++ {
-		fA := fieldsA[i]
-		fB := fieldsB[i]
+	mdA, _ := model.Inspect(mA)
+	mdB, _ := model.Inspect(mB)
+	for i := 0; i < len(mdA.Fields); i++ {
+		fA := mdA.Fields[i]
+		fB := mdB.Fields[i]
 		if r.ignored(fA) {
 			continue
 		}

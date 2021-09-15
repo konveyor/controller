@@ -11,8 +11,10 @@
 //       The generated primary key.
 //   `sql:"key"`
 //       The field is part of the natural key.
-//   `sql:"fk:T(F)"`
-//       Foreign key `T` = model type, `F` = model field.
+//   `sql:"fk(table flags...)"`
+//       Foreign key with optional flags:
+//         +must = referenced model must exist.
+//         +cascade = cascade delete.
 //   `sql:"unique(G)"`
 //       Unique index. `G` = unique-together fields.
 //   `sql:"index(G)"`
