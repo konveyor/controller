@@ -48,6 +48,8 @@ type Client struct {
 	path string
 	// Model
 	models []interface{}
+	// Overall data model.
+	dm *DataModel
 	// Session pool.
 	pool Pool
 	// Journal
@@ -219,6 +221,7 @@ func (r *Client) Begin(labels ...string) (tx *Tx, error error) {
 		real:    realTx,
 		journal: &r.journal,
 		staged:  fb.NewList(),
+		dm:      r.dm,
 		labeler: Labeler{
 			tx:  realTx,
 			log: r.log,
@@ -343,22 +346,20 @@ func (r *Client) EndWatch(watch *Watch) {
 }
 
 //
-// Build schema.
-func (r *Client) build() error {
-	statements := []string{}
+// Build the data model.
+func (r *Client) build() (err error) {
 	r.models = append(r.models, &Label{})
-	for _, m := range r.models {
-		ddl, err := Table{}.DDL(m)
-		if err != nil {
-			return err
-		}
-		statements = append(
-			statements,
-			ddl...)
+	r.dm, err = NewModel(r.models)
+	if err != nil {
+		return err
+	}
+	ddls, err := r.dm.DDL()
+	if err != nil {
+		return err
 	}
 	session := r.pool.Writer()
 	defer session.Return()
-	for _, ddl := range statements {
+	for _, ddl := range ddls {
 		_, err := session.db.Exec(ddl)
 		if err != nil {
 			return liberr.Wrap(
@@ -390,6 +391,8 @@ type Tx struct {
 	staged *fb.List
 	// Manage labels associated with models.
 	labeler Labeler
+	// DataModel.
+	dm *DataModel
 	// Logger.
 	log logr.Logger
 	// Started timestamp.
@@ -553,9 +556,8 @@ func (r *Tx) Update(model Model) (err error) {
 }
 
 //
-// Delete the model.
+// Delete (cascading) of the model.
 func (r *Tx) Delete(model Model) (err error) {
-	mark := time.Now()
 	err = Table{r.real}.Get(model)
 	if err != nil {
 		if errors.As(err, &NotFound) {
@@ -563,28 +565,25 @@ func (r *Tx) Delete(model Model) (err error) {
 		}
 		return
 	}
-	err = Table{r.real}.Delete(model)
+	cascaded, err := r.dm.Deleted(r, model)
 	if err != nil {
 		return
 	}
-	event := Event{
-		ID:     serial.next(1),
-		Labels: r.labels,
-		Action: Deleted,
-		Model:  model,
+	for {
+		m, hasNext := cascaded.Next()
+		if hasNext {
+			err = r.delete(m.(Model))
+			if err != nil {
+				return
+			}
+		} else {
+			break
+		}
 	}
-	event.append(r.staged)
-	err = r.labeler.Delete(model)
+	err = r.delete(model)
 	if err != nil {
 		return
 	}
-
-	r.log.V(3).Info(
-		"delete succeeded.",
-		"model",
-		Describe(model),
-		"duration",
-		time.Since(mark))
 
 	return
 }
@@ -643,6 +642,41 @@ func (r *Tx) End() (err error) {
 		"tx: ended.",
 		"lifespan",
 		time.Since(r.started),
+		"duration",
+		time.Since(mark))
+
+	return
+}
+
+//
+// Raw Delete.
+// Non-cascading delete of the model.
+// The model must be complete (fetched from the DB).
+func (r *Tx) delete(model Model) (err error) {
+	mark := time.Now()
+	err = Table{r.real}.Delete(model)
+	if err != nil {
+		if errors.As(err, &NotFound) {
+			err = nil
+		}
+		return
+	}
+	event := Event{
+		ID:     serial.next(1),
+		Labels: r.labels,
+		Action: Deleted,
+		Model:  model,
+	}
+	event.append(r.staged)
+	err = r.labeler.Delete(model)
+	if err != nil {
+		return
+	}
+
+	r.log.V(3).Info(
+		"delete succeeded.",
+		"model",
+		Describe(model),
 		"duration",
 		time.Since(mark))
 

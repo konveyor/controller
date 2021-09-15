@@ -162,6 +162,33 @@ func TestList(t *testing.T) {
 		g.Expect(user.ID).To(gomega.Equal(n / 2))
 	}
 	g.Expect(n).To(gomega.Equal(len(input)))
+
+	// Reverse
+	list = NewList()
+	for i := 0; i < 3; i++ {
+		list.Append(i)
+	}
+	itr = list.Iter()
+	itr.Reverse()
+	slice := []int{}
+	for {
+		n, hasNext := itr.Next()
+		if hasNext {
+			slice = append(slice, *n.(*int))
+		} else {
+			break
+		}
+	}
+	g.Expect(slice).To(gomega.Equal([]int{2, 1, 0}))
+
+	// Append iterator.
+	listA := NewList()
+	for i := 0; i < 3; i++ {
+		listA.Append(i)
+	}
+	listB := NewList()
+	listB.Append(listA.Iter())
+	g.Expect(listA.Len()).To(gomega.Equal(listB.Len()))
 }
 
 // Disabled by default.

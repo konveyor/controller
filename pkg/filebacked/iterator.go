@@ -6,6 +6,8 @@ package filebacked
 type Iterator interface {
 	// Number of items.
 	Len() int
+	// Reverse.
+	Reverse()
 	// Object at index.
 	At(index int) interface{}
 	// Object at index (with).
@@ -52,8 +54,30 @@ func (r *FbIterator) NextWith(object interface{}) (hasNext bool) {
 }
 
 //
+// Reverse the list.
+func (r *FbIterator) Reverse() {
+	in := r.index
+	if len(in) == 0 {
+		return
+	}
+	reversed := []int64{}
+	for i := len(in) - 1; i >= 0; i-- {
+		reversed = append(
+			reversed,
+			in[i])
+	}
+
+	r.index = reversed
+}
+
+//
 // Empty.
 type EmptyIterator struct {
+}
+
+//
+// Reverse.
+func (*EmptyIterator) Reverse() {
 }
 
 //

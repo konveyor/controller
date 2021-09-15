@@ -6,26 +6,14 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	liberr "github.com/konveyor/controller/pkg/error"
 	fb "github.com/konveyor/controller/pkg/filebacked"
 	"github.com/mattn/go-sqlite3"
 	"reflect"
-	"regexp"
-	"strconv"
 	"strings"
 	"text/template"
-)
-
-const (
-	// SQL tag.
-	Tag = "sql"
-	// Max detail level.
-	MaxDetail = 9
-	// Default detail level.
-	DefaultDetail = MaxDetail
 )
 
 //
@@ -175,58 +163,32 @@ type Table struct {
 //
 // Get the table name for the model.
 func (t Table) Name(model interface{}) string {
-	mt := reflect.TypeOf(model)
-	if mt.Kind() == reflect.Ptr {
-		mt = mt.Elem()
-	}
-
-	return mt.Name()
-}
-
-//
-// Validate the model.
-func (t Table) Validate(fields []*Field) error {
-	for _, f := range fields {
-		err := f.Validate()
-		if err != nil {
-			return err
-		}
-	}
-	pk := t.PkField(fields)
-	if pk == nil {
-		return liberr.Wrap(MustHavePkErr)
-	}
-
-	return nil
+	return Definition{}.kind(model)
 }
 
 //
 // Get table and index create DDL.
-func (t Table) DDL(model interface{}) (list []string, err error) {
+func (t Table) DDL(model interface{}, dm *DataModel) (list []string, err error) {
+	md, found := dm.FindWith(model)
+	if !found {
+		return
+	}
 	list = []string{}
-	fields, err := t.Fields(model)
-	if err != nil {
-		return
-	}
-	err = t.Validate(fields)
-	if err != nil {
-		return
-	}
-	ddl, err := t.TableDDL(model, fields)
+	ddl, err := t.TableDDL(md, dm)
 	if err != nil {
 		return
 	}
 	for _, stmt := range ddl {
 		list = append(list, stmt)
 	}
-	ddl, err = t.KeyIndexDDL(model, fields)
+	ddl, err = t.KeyIndexDDL(md)
 	if err != nil {
 		return
 	}
 	for _, stmt := range ddl {
 		list = append(list, stmt)
 	}
-	ddl, err = t.IndexDDL(model, fields)
+	ddl, err = t.IndexDDL(md)
 	if err != nil {
 		return
 	}
@@ -239,20 +201,23 @@ func (t Table) DDL(model interface{}) (list []string, err error) {
 
 //
 // Build table DDL.
-func (t Table) TableDDL(model interface{}, fields []*Field) (list []string, err error) {
+func (t Table) TableDDL(md *Definition, dm *DataModel) (list []string, err error) {
 	tpl := template.New("")
 	tpl, err = tpl.Parse(TableDDL)
 	if err != nil {
 		err = liberr.Wrap(err)
 		return
 	}
-	constraints := t.Constraints(fields)
+	constraints, err := t.Constraints(md, dm)
+	if err != nil {
+		return
+	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
 		bfr,
 		TmplData{
-			Table:       t.Name(model),
-			Fields:      t.RealFields(fields),
+			Table:       md.Kind,
+			Fields:      md.RealFields(md.Fields),
 			Constraints: constraints,
 		})
 	if err != nil {
@@ -265,9 +230,9 @@ func (t Table) TableDDL(model interface{}, fields []*Field) (list []string, err 
 
 //
 // Build natural key index DDL.
-func (t Table) KeyIndexDDL(model interface{}, fields []*Field) (list []string, err error) {
+func (t Table) KeyIndexDDL(md *Definition) (list []string, err error) {
 	tpl := template.New("")
-	keyFields := t.KeyFields(fields)
+	keyFields := md.KeyFields()
 	if len(keyFields) > 0 {
 		tpl, err = tpl.Parse(IndexDDL)
 		if err != nil {
@@ -278,9 +243,9 @@ func (t Table) KeyIndexDDL(model interface{}, fields []*Field) (list []string, e
 		err = tpl.Execute(
 			bfr,
 			TmplData{
-				Table:  t.Name(model),
-				Index:  t.Name(model),
-				Fields: t.RealFields(keyFields),
+				Table:  md.Kind,
+				Index:  md.Kind,
+				Fields: md.RealFields(keyFields),
 			})
 		if err != nil {
 			err = liberr.Wrap(err)
@@ -294,10 +259,10 @@ func (t Table) KeyIndexDDL(model interface{}, fields []*Field) (list []string, e
 
 //
 // Build non-unique index DDL.
-func (t Table) IndexDDL(model interface{}, fields []*Field) (list []string, err error) {
+func (t Table) IndexDDL(md *Definition) (list []string, err error) {
 	tpl := template.New("")
 	index := map[string][]*Field{}
-	for _, field := range fields {
+	for _, field := range md.Fields {
 		for _, group := range field.Index() {
 			list, found := index[group]
 			if found {
@@ -305,6 +270,18 @@ func (t Table) IndexDDL(model interface{}, fields []*Field) (list []string, err 
 			} else {
 				index[group] = []*Field{field}
 			}
+		}
+	}
+	for _, fk := range md.Fks() {
+		if !fk.needsIndex() {
+			continue
+		}
+		group := fk.Owner.Name + "__FK__"
+		list, found := index[group]
+		if found {
+			index[group] = append(list, fk.Owner)
+		} else {
+			index[group] = []*Field{fk.Owner}
 		}
 	}
 	for group, idxFields := range index {
@@ -317,9 +294,9 @@ func (t Table) IndexDDL(model interface{}, fields []*Field) (list []string, err 
 		err = tpl.Execute(
 			bfr,
 			TmplData{
-				Table:  t.Name(model),
-				Index:  t.Name(model) + group,
-				Fields: t.RealFields(idxFields),
+				Table:  md.Kind,
+				Index:  md.Kind + group,
+				Fields: md.RealFields(idxFields),
 			})
 		if err != nil {
 			err = liberr.Wrap(err)
@@ -334,17 +311,17 @@ func (t Table) IndexDDL(model interface{}, fields []*Field) (list []string, err 
 //
 // Insert the model in the DB.
 // Expects the primary key (PK) to be set.
-func (t Table) Insert(model interface{}) error {
-	fields, err := t.Fields(model)
+func (t Table) Insert(model interface{}) (err error) {
+	md, err := Inspect(model)
 	if err != nil {
-		return err
+		return
 	}
-	t.EnsurePk(fields)
-	stmt, err := t.insertSQL(t.Name(model), fields)
+	t.EnsurePk(md)
+	stmt, err := t.insertSQL(md)
 	if err != nil {
-		return err
+		return
 	}
-	params := t.Params(fields)
+	params := t.Params(md)
 	r, err := t.DB.Exec(stmt, params...)
 	if err != nil {
 		if sql3Err, cast := err.(sqlite3.Error); cast {
@@ -352,14 +329,21 @@ func (t Table) Insert(model interface{}) error {
 				return t.Update(model)
 			}
 		}
-		return liberr.Wrap(err, "sql", stmt, "params", params)
+		err = liberr.Wrap(
+			err,
+			"sql",
+			stmt,
+			"params",
+			params)
+		return
 	}
 	_, err = r.RowsAffected()
 	if err != nil {
-		return liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 
-	t.reflectIncremented(fields)
+	t.reflectIncremented(md)
 
 	log.V(5).Info(
 		"table: model inserted.",
@@ -368,36 +352,44 @@ func (t Table) Insert(model interface{}) error {
 		"params",
 		params)
 
-	return nil
+	return
 }
 
 //
 // Update the model in the DB.
 // Expects the primary key (PK) to be set.
-func (t Table) Update(model interface{}) error {
-	fields, err := t.Fields(model)
+func (t Table) Update(model interface{}) (err error) {
+	md, err := Inspect(model)
 	if err != nil {
-		return err
+		return
 	}
-	t.EnsurePk(fields)
-	stmt, err := t.updateSQL(t.Name(model), fields)
+	t.EnsurePk(md)
+	stmt, err := t.updateSQL(md)
 	if err != nil {
-		return err
+		return
 	}
-	params := t.Params(fields)
+	params := t.Params(md)
 	r, err := t.DB.Exec(stmt, params...)
 	if err != nil {
-		return liberr.Wrap(err, "sql", stmt, "params", params)
+		err = liberr.Wrap(
+			err,
+			"sql",
+			stmt,
+			"params",
+			params)
+		return
 	}
 	nRows, err := r.RowsAffected()
 	if err != nil {
-		return liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 	if nRows == 0 {
-		return liberr.Wrap(NotFound)
+		err = liberr.Wrap(NotFound)
+		return
 	}
 
-	t.reflectIncremented(fields)
+	t.reflectIncremented(md)
 
 	log.V(5).Info(
 		"table: model updated.",
@@ -406,33 +398,41 @@ func (t Table) Update(model interface{}) error {
 		"params",
 		params)
 
-	return nil
+	return
 }
 
 //
 // Delete the model in the DB.
 // Expects the primary key (PK) to be set.
-func (t Table) Delete(model interface{}) error {
-	fields, err := t.Fields(model)
+func (t Table) Delete(model interface{}) (err error) {
+	md, err := Inspect(model)
 	if err != nil {
-		return err
+		return
 	}
-	t.EnsurePk(fields)
-	stmt, err := t.deleteSQL(t.Name(model), fields)
+	t.EnsurePk(md)
+	stmt, err := t.deleteSQL(md)
 	if err != nil {
-		return err
+		return
 	}
-	params := t.Params(fields)
+	params := t.Params(md)
 	r, err := t.DB.Exec(stmt, params...)
 	if err != nil {
-		return liberr.Wrap(err, "sql", stmt, "params", params)
+		err = liberr.Wrap(
+			err,
+			"sql",
+			stmt,
+			"params",
+			params)
+		return
 	}
 	nRows, err := r.RowsAffected()
 	if err != nil {
-		return liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 	if nRows == 0 {
-		return nil
+		err = liberr.Wrap(NotFound)
+		return
 	}
 
 	log.V(5).Info(
@@ -442,28 +442,34 @@ func (t Table) Delete(model interface{}) error {
 		"params",
 		params)
 
-	return nil
+	return
 }
 
 //
 // Get the model in the DB.
 // Expects the primary key (PK) to be set.
 // Fetch the row and populate the fields in the model.
-func (t Table) Get(model interface{}) error {
-	fields, err := t.Fields(model)
+func (t Table) Get(model interface{}) (err error) {
+	md, err := Inspect(model)
 	if err != nil {
-		return err
+		return
 	}
-	t.EnsurePk(fields)
-	stmt, err := t.getSQL(t.Name(model), fields)
+	t.EnsurePk(md)
+	stmt, err := t.getSQL(md)
 	if err != nil {
-		return err
+		return
 	}
-	params := t.Params(fields)
+	params := t.Params(md)
 	row := t.DB.QueryRow(stmt, params...)
-	err = t.scan(row, fields)
+	err = t.scan(row, md.Fields)
 	if err != nil {
-		err = liberr.Wrap(err, "sql", stmt, "params", params)
+		err = liberr.Wrap(
+			err,
+			"sql",
+			stmt,
+			"params",
+			params)
+		return
 	}
 
 	log.V(5).Info(
@@ -473,13 +479,13 @@ func (t Table) Get(model interface{}) error {
 		"params",
 		params)
 
-	return err
+	return
 }
 
 //
 // List the model in the DB.
 // Qualified by the list options.
-func (t Table) List(list interface{}, options ListOptions) error {
+func (t Table) List(list interface{}, options ListOptions) (err error) {
 	var model interface{}
 	lt := reflect.TypeOf(list)
 	lv := reflect.ValueOf(list)
@@ -488,26 +494,34 @@ func (t Table) List(list interface{}, options ListOptions) error {
 		lt = lt.Elem()
 		lv = lv.Elem()
 	default:
-		return liberr.Wrap(MustBeSlicePtrErr)
+		err = liberr.Wrap(MustBeSlicePtrErr)
+		return
 	}
 	switch lt.Kind() {
 	case reflect.Slice:
 		model = reflect.New(lt.Elem()).Interface()
 	default:
-		return liberr.Wrap(MustBeSlicePtrErr)
+		err = liberr.Wrap(MustBeSlicePtrErr)
+		return
 	}
-	fields, err := t.Fields(model)
+	md, err := Inspect(model)
 	if err != nil {
-		return err
+		return
 	}
-	stmt, err := t.listSQL(t.Name(model), fields, &options)
+	stmt, err := t.listSQL(md, &options)
 	if err != nil {
-		return err
+		return
 	}
 	params := options.Params()
 	cursor, err := t.DB.Query(stmt, params...)
 	if err != nil {
-		return liberr.Wrap(err, "sql", stmt, "params", params)
+		err = liberr.Wrap(
+			err,
+			"sql",
+			stmt,
+			"params",
+			params)
+		return
 	}
 	defer func() {
 		_ = cursor.Close()
@@ -517,11 +531,12 @@ func (t Table) List(list interface{}, options ListOptions) error {
 		mt := reflect.TypeOf(model)
 		mPtr := reflect.New(mt.Elem())
 		mInt := mPtr.Interface()
-		mFields, _ := t.Fields(mInt)
-		options.fields = mFields
+		mDef, _ := Inspect(mInt)
+		options.fields = mDef.Fields
 		err = t.scan(cursor, options.Fields())
 		if err != nil {
-			return liberr.Wrap(err)
+			err = liberr.Wrap(err)
+			return
 		}
 		mList = reflect.Append(mList, mPtr.Elem())
 	}
@@ -537,18 +552,18 @@ func (t Table) List(list interface{}, options ListOptions) error {
 		"matched",
 		lv.Len())
 
-	return nil
+	return
 }
 
 //
 // Find models in the DB.
 // Qualified by the list options.
 func (t Table) Find(model interface{}, options ListOptions) (itr fb.Iterator, err error) {
-	fields, err := t.Fields(model)
+	md, err := Inspect(model)
 	if err != nil {
 		return
 	}
-	stmt, err := t.listSQL(t.Name(model), fields, &options)
+	stmt, err := t.listSQL(md, &options)
 	if err != nil {
 		return
 	}
@@ -566,8 +581,8 @@ func (t Table) Find(model interface{}, options ListOptions) (itr fb.Iterator, er
 		mt := reflect.TypeOf(model)
 		mPtr := reflect.New(mt.Elem())
 		mInt := mPtr.Interface()
-		mFields, _ := t.Fields(mInt)
-		options.fields = mFields
+		mDef, _ := Inspect(mInt)
+		options.fields = mDef.Fields
 		err = t.scan(cursor, options.Fields())
 		if err != nil {
 			err = liberr.Wrap(err)
@@ -594,22 +609,28 @@ func (t Table) Find(model interface{}, options ListOptions) (itr fb.Iterator, er
 // Count the models in the DB.
 // Qualified by the model field values and list options.
 // Else, ALL models are counted.
-func (t Table) Count(model interface{}, predicate Predicate) (int64, error) {
-	fields, err := t.Fields(model)
+func (t Table) Count(model interface{}, predicate Predicate) (count int64, err error) {
+	md, err := Inspect(model)
 	if err != nil {
-		return 0, err
+		return
 	}
 	options := ListOptions{Predicate: predicate}
-	stmt, err := t.countSQL(t.Name(model), fields, &options)
+	stmt, err := t.countSQL(md, &options)
 	if err != nil {
-		return 0, err
+		return
 	}
-	count := int64(0)
+	count = int64(0)
 	params := options.Params()
 	row := t.DB.QueryRow(stmt, params...)
 	err = row.Scan(&count)
 	if err != nil {
-		return 0, liberr.Wrap(err, "sql", stmt, "params", params)
+		err = liberr.Wrap(
+			err,
+			"sql",
+			stmt,
+			"params",
+			params)
+		return
 	}
 
 	log.V(5).Info(
@@ -619,97 +640,27 @@ func (t Table) Count(model interface{}, predicate Predicate) (int64, error) {
 		"params",
 		params)
 
-	return count, nil
-}
-
-//
-// Get the `Fields` for the model.
-func (t Table) Fields(model interface{}) ([]*Field, error) {
-	fields := []*Field{}
-	mt := reflect.TypeOf(model)
-	mv := reflect.ValueOf(model)
-	if mt.Kind() == reflect.Ptr {
-		mt = mt.Elem()
-		mv = mv.Elem()
-	} else {
-		return nil, liberr.Wrap(MustBePtrErr)
-	}
-	if mv.Kind() != reflect.Struct {
-		return nil, liberr.Wrap(MustBeObjectErr)
-	}
-	for i := 0; i < mt.NumField(); i++ {
-		ft := mt.Field(i)
-		fv := mv.Field(i)
-		if !fv.CanSet() {
-			continue
-		}
-		switch fv.Kind() {
-		case reflect.Struct:
-			sqlTag, found := ft.Tag.Lookup(Tag)
-			if found {
-				if sqlTag == "-" {
-					break
-				}
-				fields = append(
-					fields,
-					&Field{
-						Tag:   sqlTag,
-						Name:  ft.Name,
-						Value: &fv,
-						Type:  &ft,
-					})
-			} else {
-				nested, err := t.Fields(fv.Addr().Interface())
-				if err != nil {
-					return nil, nil
-				}
-				fields = append(fields, nested...)
-			}
-		case reflect.Slice,
-			reflect.Map,
-			reflect.String,
-			reflect.Bool,
-			reflect.Int,
-			reflect.Int8,
-			reflect.Int16,
-			reflect.Int32,
-			reflect.Int64:
-			sqlTag, _ := ft.Tag.Lookup(Tag)
-			if sqlTag == "-" {
-				continue
-			}
-			fields = append(
-				fields,
-				&Field{
-					Tag:   sqlTag,
-					Name:  ft.Name,
-					Value: &fv,
-					Type:  &ft,
-				})
-		}
-	}
-
-	return fields, nil
+	return
 }
 
 //
 // Get the `Fields` referenced as param in SQL.
-func (t Table) Params(fields []*Field) []interface{} {
-	list := []interface{}{}
-	for _, f := range fields {
+func (t Table) Params(md *Definition) (list []interface{}) {
+	list = []interface{}{}
+	for _, f := range md.Fields {
 		if f.isParam {
 			p := sql.Named(f.Name, f.Pull())
 			list = append(list, p)
 		}
 	}
 
-	return list
+	return
 }
 
 //
 // Ensure PK is generated as specified/needed.
-func (t Table) EnsurePk(fields []*Field) {
-	pk := t.PkField(fields)
+func (t Table) EnsurePk(md *Definition) {
+	pk := md.PkField()
 	if pk == nil {
 		return
 	}
@@ -726,7 +677,7 @@ func (t Table) EnsurePk(fields []*Field) {
 		return
 	}
 	h := sha1.New()
-	for _, f := range fields {
+	for _, f := range md.Fields {
 		name := strings.ToLower(f.Name)
 		if matched, _ := withFields[name]; !matched {
 			continue
@@ -751,62 +702,11 @@ func (t Table) EnsurePk(fields []*Field) {
 }
 
 //
-// Get the mutable `Fields` for the model.
-func (t Table) MutableFields(fields []*Field) []*Field {
-	list := []*Field{}
-	for _, f := range fields {
-		if f.Mutable() {
-			list = append(list, f)
-		}
-	}
-
-	return list
-}
-
-//
-// Get the natural key `Fields` for the model.
-func (t Table) KeyFields(fields []*Field) []*Field {
-	list := []*Field{}
-	for _, f := range fields {
-		if f.Key() {
-			list = append(list, f)
-		}
-	}
-
-	return list
-}
-
-//
-// Get the non-virtual `Fields` for the model.
-func (t Table) RealFields(fields []*Field) []*Field {
-	list := []*Field{}
-	for _, f := range fields {
-		if !f.Virtual() {
-			list = append(list, f)
-		}
-	}
-
-	return list
-}
-
-//
-// Get the PK field.
-func (t Table) PkField(fields []*Field) *Field {
-	for _, f := range fields {
-		if f.Pk() {
-			return f
-		}
-	}
-
-	return nil
-}
-
-//
 // Get constraint DDL.
-func (t Table) Constraints(fields []*Field) []string {
-	constraints := []string{}
+func (t Table) Constraints(md *Definition, dm *DataModel) (constraints []string, err error) {
+	constraints = []string{}
 	unique := map[string][]string{}
-	for _, field := range fields {
+	for _, field := range md.Fields {
 		for _, name := range field.Unique() {
 			list, found := unique[name]
 			if found {
@@ -823,23 +723,24 @@ func (t Table) Constraints(fields []*Field) []string {
 				"UNIQUE (%s)",
 				strings.Join(list, ",")))
 	}
-	for _, field := range fields {
-		fk := field.Fk()
-		if fk == nil {
-			continue
-		}
-		constraints = append(constraints, fk.DDL(field))
+	fkRelation := FkRelation{dm: dm}
+	ddl, err := fkRelation.DDL(md)
+	if err != nil {
+		return
 	}
+	constraints = append(
+		constraints,
+		ddl...)
 
-	return constraints
+	return
 }
 
 //
 // Reflect auto-incremented fields.
 // Field.int is incremented by Field.Push() called when the
 // SQL statement is built. This needs to be propagated to the model.
-func (t *Table) reflectIncremented(fields []*Field) {
-	for _, f := range fields {
+func (t *Table) reflectIncremented(md *Definition) {
+	for _, f := range md.Fields {
 		if f.Incremented() {
 			f.Value.SetInt(f.int)
 		}
@@ -848,668 +749,194 @@ func (t *Table) reflectIncremented(fields []*Field) {
 
 //
 // Build model insert SQL.
-func (t Table) insertSQL(table string, fields []*Field) (string, error) {
+func (t Table) insertSQL(md *Definition) (sql string, err error) {
 	tpl := template.New("")
-	tpl, err := tpl.Parse(InsertSQL)
+	tpl, err = tpl.Parse(InsertSQL)
 	if err != nil {
-		return "", liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
 		bfr,
 		TmplData{
-			Table:  table,
-			Fields: t.RealFields(fields),
+			Table:  md.Kind,
+			Fields: md.RealFields(md.Fields),
 		})
 	if err != nil {
-		return "", liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 
-	return bfr.String(), nil
+	sql = bfr.String()
+
+	return
 }
 
 //
 // Build model update SQL.
-func (t Table) updateSQL(table string, fields []*Field) (string, error) {
+func (t Table) updateSQL(md *Definition) (sql string, err error) {
 	tpl := template.New("")
-	tpl, err := tpl.Parse(UpdateSQL)
+	tpl, err = tpl.Parse(UpdateSQL)
 	if err != nil {
-		return "", liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
 		bfr,
 		TmplData{
-			Table:  table,
-			Fields: t.MutableFields(fields),
-			Pk:     t.PkField(fields),
+			Table:  md.Kind,
+			Fields: md.MutableFields(),
+			Pk:     md.PkField(),
 		})
 	if err != nil {
-		return "", liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 
-	return bfr.String(), nil
+	sql = bfr.String()
+
+	return
 }
 
 //
 // Build model delete SQL.
-func (t Table) deleteSQL(table string, fields []*Field) (string, error) {
+func (t Table) deleteSQL(md *Definition) (sql string, err error) {
 	tpl := template.New("")
-	tpl, err := tpl.Parse(DeleteSQL)
+	tpl, err = tpl.Parse(DeleteSQL)
 	if err != nil {
-		return "", liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
 		bfr,
 		TmplData{
-			Table: table,
-			Pk:    t.PkField(fields),
+			Table: md.Kind,
+			Pk:    md.PkField(),
 		})
 	if err != nil {
-		return "", liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 
-	return bfr.String(), nil
+	sql = bfr.String()
+
+	return
 }
 
 //
 // Build model get SQL.
-func (t Table) getSQL(table string, fields []*Field) (string, error) {
+func (t Table) getSQL(md *Definition) (sql string, err error) {
 	tpl := template.New("")
-	tpl, err := tpl.Parse(GetSQL)
+	tpl, err = tpl.Parse(GetSQL)
 	if err != nil {
-		return "", liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
 		bfr,
 		TmplData{
-			Table:  table,
-			Pk:     t.PkField(fields),
-			Fields: fields,
+			Table:  md.Kind,
+			Pk:     md.PkField(),
+			Fields: md.Fields,
 		})
 	if err != nil {
-		return "", liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 
-	return bfr.String(), nil
+	sql = bfr.String()
+
+	return
 }
 
 //
 // Build model list SQL.
-func (t Table) listSQL(table string, fields []*Field, options *ListOptions) (string, error) {
+func (t Table) listSQL(md *Definition, options *ListOptions) (sql string, err error) {
 	tpl := template.New("")
-	tpl, err := tpl.Parse(ListSQL)
+	tpl, err = tpl.Parse(ListSQL)
 	if err != nil {
-		return "", liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
-	err = options.Build(table, fields)
+	err = options.Build(md)
 	if err != nil {
-		return "", err
+		return
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
 		bfr,
 		TmplData{
-			Table:   table,
-			Fields:  fields,
+			Table:   md.Kind,
+			Fields:  md.Fields,
 			Options: options,
-			Pk:      t.PkField(fields),
+			Pk:      md.PkField(),
 		})
 	if err != nil {
-		return "", liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 
-	return bfr.String(), nil
+	sql = bfr.String()
+
+	return
 }
 
 //
 // Build model count SQL.
-func (t Table) countSQL(table string, fields []*Field, options *ListOptions) (string, error) {
+func (t Table) countSQL(md *Definition, options *ListOptions) (sql string, err error) {
 	tpl := template.New("")
-	tpl, err := tpl.Parse(ListSQL)
+	tpl, err = tpl.Parse(ListSQL)
 	if err != nil {
-		return "", liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
-	err = options.Build(table, fields)
+	err = options.Build(md)
 	if err != nil {
-		return "", err
+		return
 	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
 		bfr,
 		TmplData{
-			Table:   table,
-			Fields:  fields,
+			Table:   md.Kind,
+			Fields:  md.Fields,
 			Options: options,
 			Count:   true,
-			Pk:      t.PkField(fields),
+			Pk:      md.PkField(),
 		})
 	if err != nil {
-		return "", liberr.Wrap(err)
+		err = liberr.Wrap(err)
+		return
 	}
 
-	return bfr.String(), nil
+	sql = bfr.String()
+
+	return
 }
 
 //
 // Scan the fetch row into the model.
 // The model fields are updated.
-func (t Table) scan(row Row, fields []*Field) error {
+func (t Table) scan(row Row, fields []*Field) (err error) {
 	list := []interface{}{}
 	for _, f := range fields {
 		f.Pull()
 		list = append(list, f.Ptr())
 	}
-	err := row.Scan(list...)
-	if err == nil {
-		for _, f := range fields {
-			f.Push()
-		}
-	}
-
-	return liberr.Wrap(err)
-}
-
-//
-// Regex used for `pk(fields)` tags.
-var PkRegex = regexp.MustCompile(`(pk)((\()(.+)(\)))?`)
-
-//
-// Regex used for `unique(group)` tags.
-var UniqueRegex = regexp.MustCompile(`(unique)(\()(.+)(\))`)
-
-//
-// Regex used for `index(group)` tags.
-var IndexRegex = regexp.MustCompile(`(index)(\()(.+)(\))`)
-
-//
-// Regex used for `fk:<table>(field)` tags.
-var FkRegex = regexp.MustCompile(`(fk):(.+)(\()(.+)(\))`)
-
-//
-// Regex used for detail.
-var DetailRegex = regexp.MustCompile(`(d)([0-9]+)`)
-
-//
-// Model (struct) Field
-type Field struct {
-	// reflect.Type of the field.
-	Type *reflect.StructField
-	// reflect.Value of the field.
-	Value *reflect.Value
-	// Field name.
-	Name string
-	// SQL tag.
-	Tag string
-	// Staging (string) values.
-	string string
-	// Staging (int) values.
-	int int64
-	// Referenced as a parameter.
-	isParam bool
-}
-
-//
-// Validate.
-func (f *Field) Validate() error {
-	switch f.Value.Kind() {
-	case reflect.String:
-	case reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64:
-		if len(f.WithFields()) > 0 {
-			return liberr.Wrap(GenPkTypeErr)
-		}
-	default:
-		if f.Pk() {
-			return liberr.Wrap(PkTypeErr)
-		}
-	}
-	if f.Detail() > MaxDetail {
-		return liberr.Wrap(DetailErr)
-	}
-
-	return nil
-}
-
-//
-// Pull from model.
-// Populate the appropriate `staging` field using the
-// model field value.
-func (f *Field) Pull() interface{} {
-	switch f.Value.Kind() {
-	case reflect.Struct:
-		object := f.Value.Interface()
-		b, err := json.Marshal(&object)
-		if err == nil {
-			f.string = string(b)
-		}
-		return f.string
-	case reflect.Slice:
-		if !f.Value.IsNil() {
-			object := f.Value.Interface()
-			b, err := json.Marshal(&object)
-			if err == nil {
-				f.string = string(b)
-			}
-		} else {
-			f.string = "[]"
-		}
-		return f.string
-	case reflect.Map:
-		if !f.Value.IsNil() {
-			object := f.Value.Interface()
-			b, err := json.Marshal(&object)
-			if err == nil {
-				f.string = string(b)
-			}
-		} else {
-			f.string = "{}"
-		}
-		return f.string
-	case reflect.String:
-		f.string = f.Value.String()
-		return f.string
-	case reflect.Bool:
-		b := f.Value.Bool()
-		if b {
-			f.int = 1
-		}
-		return f.int
-	case reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64:
-		f.int = f.Value.Int()
-		if f.Incremented() {
-			f.int++
-		}
-		return f.int
-	}
-
-	return nil
-}
-
-//
-// Pointer used for Scan().
-func (f *Field) Ptr() interface{} {
-	switch f.Value.Kind() {
-	case reflect.Bool,
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64:
-		return &f.int
-	default:
-		return &f.string
-	}
-}
-
-//
-// Push to the model.
-// Set the model field value using the `staging` field.
-func (f *Field) Push() {
-	switch f.Value.Kind() {
-	case reflect.Struct:
-		if len(f.string) == 0 {
-			break
-		}
-		tv := reflect.New(f.Value.Type())
-		object := tv.Interface()
-		err := json.Unmarshal([]byte(f.string), &object)
-		if err == nil {
-			tv = reflect.ValueOf(object)
-			f.Value.Set(tv.Elem())
-		}
-	case reflect.Slice,
-		reflect.Map:
-		if len(f.string) == 0 {
-			break
-		}
-		tv := reflect.New(f.Value.Type())
-		object := tv.Interface()
-		err := json.Unmarshal([]byte(f.string), object)
-		if err == nil {
-			tv = reflect.ValueOf(object)
-			tv = reflect.Indirect(tv)
-			f.Value.Set(tv)
-		}
-	case reflect.String:
-		f.Value.SetString(f.string)
-	case reflect.Bool:
-		b := false
-		if f.int != 0 {
-			b = true
-		}
-		f.Value.SetBool(b)
-	case reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64:
-		f.Value.SetInt(f.int)
-	}
-}
-
-//
-// Column DDL.
-func (f *Field) DDL() string {
-	part := []string{
-		f.Name, // name
-		"",     // type
-		"",     // constraint
-	}
-	switch f.Value.Kind() {
-	case reflect.Bool,
-		reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64:
-		part[1] = "INTEGER"
-	default:
-		part[1] = "TEXT"
-	}
-	if f.Pk() {
-		part[2] = "PRIMARY KEY"
-	} else {
-		part[2] = "NOT NULL"
-	}
-
-	return strings.Join(part, " ")
-}
-
-//
-// Get as SQL param.
-func (f *Field) Param() string {
-	f.isParam = true
-	return ":" + f.Name
-}
-
-//
-// Get whether field is the primary key.
-func (f *Field) Pk() (matched bool) {
-	for _, opt := range strings.Split(f.Tag, ",") {
-		m := PkRegex.FindStringSubmatch(opt)
-		if m != nil {
-			matched = true
-			break
-		}
-	}
-	return
-}
-
-//
-// Fields used to generate the primary key.
-// Map of lower-cased field names. May be empty
-// when generation is not enabled.
-func (f *Field) WithFields() (withFields map[string]bool) {
-	withFields = map[string]bool{}
-	for _, opt := range strings.Split(f.Tag, ",") {
-		opt = strings.TrimSpace(opt)
-		m := PkRegex.FindStringSubmatch(opt)
-		if len(m) == 6 {
-			for _, name := range strings.Split(m[4], ";") {
-				name = strings.TrimSpace(name)
-				if len(name) > 0 {
-					name = strings.ToLower(name)
-					withFields[name] = true
-				}
-			}
-		}
-		break
-	}
-
-	return
-}
-
-//
-// Get whether field is mutable.
-// Only mutable fields will be updated.
-func (f *Field) Mutable() bool {
-	if f.Pk() || f.Key() || f.Virtual() {
-		return false
-	}
-
-	return !f.hasOpt("const")
-}
-
-//
-// Get whether field is a natural key.
-func (f *Field) Key() bool {
-	return f.hasOpt("key")
-}
-
-//
-// Get whether field is virtual.
-// A `virtual` field is read-only and managed
-// internally in the DB.
-func (f *Field) Virtual() bool {
-	return f.hasOpt("virtual")
-}
-
-//
-// Get whether the field is unique.
-func (f *Field) Unique() []string {
-	list := []string{}
-	for _, opt := range strings.Split(f.Tag, ",") {
-		opt = strings.TrimSpace(opt)
-		m := UniqueRegex.FindStringSubmatch(opt)
-		if len(m) == 5 {
-			list = append(list, m[3])
-		}
-	}
-
-	return list
-}
-
-//
-// Get whether the field has non-unique index.
-func (f *Field) Index() []string {
-	list := []string{}
-	for _, opt := range strings.Split(f.Tag, ",") {
-		opt = strings.TrimSpace(opt)
-		m := IndexRegex.FindStringSubmatch(opt)
-		if len(m) == 5 {
-			list = append(list, m[3])
-		}
-	}
-
-	return list
-}
-
-//
-// Get whether the field is a foreign key.
-func (f *Field) Fk() *FK {
-	for _, opt := range strings.Split(f.Tag, ",") {
-		opt = strings.TrimSpace(opt)
-		m := FkRegex.FindStringSubmatch(opt)
-		if len(m) == 6 {
-			return &FK{
-				Table: m[2],
-				Field: m[4],
-			}
-		}
-	}
-
-	return nil
-}
-
-//
-// Get whether field is auto-incremented.
-func (f *Field) Incremented() bool {
-	return f.hasOpt("incremented")
-}
-
-// Convert the specified `object` to a value
-// (type) appropriate for the field.
-func (f *Field) AsValue(object interface{}) (value interface{}, err error) {
-	val := reflect.ValueOf(object)
-	switch val.Kind() {
-	case reflect.Ptr:
-		val = val.Elem()
-	case reflect.Struct,
-		reflect.Slice,
-		reflect.Map:
-		err = liberr.Wrap(PredicateValueErr)
+	err = row.Scan(list...)
+	if err != nil {
+		err = liberr.Wrap(err)
 		return
 	}
-	switch f.Value.Kind() {
-	case reflect.String:
-		switch val.Kind() {
-		case reflect.String:
-			value = val.String()
-		case reflect.Bool:
-			b := val.Bool()
-			value = strconv.FormatBool(b)
-		case reflect.Int,
-			reflect.Int8,
-			reflect.Int16,
-			reflect.Int32,
-			reflect.Int64:
-			n := val.Int()
-			value = strconv.FormatInt(n, 0)
-		default:
-			err = liberr.Wrap(PredicateValueErr)
-		}
-	case reflect.Bool:
-		switch val.Kind() {
-		case reflect.String:
-			s := val.String()
-			b, pErr := strconv.ParseBool(s)
-			if pErr != nil {
-				err = liberr.Wrap(pErr)
-				return
-			}
-			value = b
-		case reflect.Bool:
-			value = val.Bool()
-		case reflect.Int,
-			reflect.Int8,
-			reflect.Int16,
-			reflect.Int32,
-			reflect.Int64:
-			n := val.Int()
-			if n != 0 {
-				value = true
-			} else {
-				value = false
-			}
-		default:
-			err = liberr.Wrap(PredicateValueErr)
-		}
-	case reflect.Int,
-		reflect.Int8,
-		reflect.Int16,
-		reflect.Int32,
-		reflect.Int64:
-		switch val.Kind() {
-		case reflect.String:
-			n, err := strconv.ParseInt(val.String(), 0, 64)
-			if err != nil {
-				err = liberr.Wrap(err)
-			}
-			value = n
-		case reflect.Bool:
-			if val.Bool() {
-				value = 1
-			} else {
-				value = 0
-			}
-		case reflect.Int,
-			reflect.Int8,
-			reflect.Int16,
-			reflect.Int32,
-			reflect.Int64:
-			value = val.Int()
-		default:
-			err = liberr.Wrap(PredicateValueErr)
-		}
-	default:
-		err = liberr.Wrap(FieldTypeErr)
+	for _, f := range fields {
+		f.Push()
 	}
 
 	return
-}
-
-//
-// Get whether the field is `json` encoded.
-func (f *Field) Encoded() (encoded bool) {
-	switch f.Value.Kind() {
-	case reflect.Struct,
-		reflect.Slice,
-		reflect.Map:
-		encoded = true
-	}
-
-	return
-}
-
-//
-// Detail level.
-// Defaults:
-//   Key fields = 0.
-//        Other = DefaultDetail
-func (f *Field) Detail() (level int) {
-	level = DefaultDetail
-	for _, opt := range strings.Split(f.Tag, ",") {
-		opt = strings.TrimSpace(opt)
-		m := DetailRegex.FindStringSubmatch(opt)
-		if len(m) == 3 {
-			level, _ = strconv.Atoi(m[2])
-			return
-		}
-	}
-	if f.Pk() || f.Key() {
-		level = 0
-		return
-	}
-
-	return
-}
-
-//
-// Match detail level.
-func (f *Field) MatchDetail(level int) bool {
-	return f.Detail() <= level
-}
-
-//
-// Get whether field has an option.
-func (f *Field) hasOpt(name string) bool {
-	for _, opt := range strings.Split(f.Tag, ",") {
-		opt = strings.TrimSpace(opt)
-		if opt == name {
-			return true
-		}
-	}
-
-	return false
-}
-
-//
-// FK constraint.
-type FK struct {
-	// Table name.
-	Table string
-	// Field name.
-	Field string
-}
-
-//
-// Get DDL.
-func (f *FK) DDL(field *Field) string {
-	return fmt.Sprintf(
-		"FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE CASCADE",
-		field.Name,
-		f.Table,
-		f.Field)
 }
 
 //
@@ -1575,27 +1002,24 @@ type ListOptions struct {
 
 //
 // Validate options.
-func (l *ListOptions) Build(table string, fields []*Field) error {
-	l.table = table
-	l.fields = fields
-	if l.Predicate == nil {
-		return nil
-	}
-	err := l.Predicate.Build(l)
-	if err != nil {
-		return err
+func (l *ListOptions) Build(md *Definition) (err error) {
+	l.table = md.Kind
+	l.fields = md.Fields
+	if l.Predicate != nil {
+		err = l.Predicate.Build(l)
 	}
 
-	return nil
+	return
 }
 
 //
 // Get an appropriate parameter name.
 // Builds a parameter and adds it to the options.param list.
-func (l *ListOptions) Param(name string, value interface{}) string {
+func (l *ListOptions) Param(name string, value interface{}) (p string) {
 	name = fmt.Sprintf("%s%d", name, len(l.params))
 	l.params = append(l.params, sql.Named(name, value))
-	return ":" + name
+	p = ":" + name
+	return
 }
 
 //

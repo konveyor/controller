@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+func init() {
+	DefaultDetail = MaxDetail
+}
+
 type TestEncoded struct {
 	Name string
 }
@@ -42,6 +46,42 @@ func (m *PlainObject) Equals(other Model) bool {
 
 func (m *PlainObject) Labels() Labels {
 	return nil
+}
+
+type DetailA struct {
+	PK int `sql:"pk"`
+	FK int `sql:"fk(PlainObject +cascade +must)"`
+}
+
+func (m *DetailA) Pk() string {
+	return fmt.Sprintf("%d", m.PK)
+}
+
+type DetailB struct {
+	PK int `sql:"pk"`
+	FK int `sql:"fk(detailA +cascade)"`
+}
+
+func (m *DetailB) Pk() string {
+	return fmt.Sprintf("%d", m.PK)
+}
+
+type DetailC struct {
+	PK int `sql:"pk"`
+	FK int `sql:"fk(DetailB +cascade)"`
+}
+
+func (m *DetailC) Pk() string {
+	return fmt.Sprintf("%d", m.PK)
+}
+
+type DetailD struct {
+	PK int `sql:"pk"`
+	FK int `sql:"fk(DetailB +cascade)"`
+}
+
+func (m *DetailD) Pk() string {
+	return fmt.Sprintf("%d", m.PK)
 }
 
 type TestObject struct {
@@ -201,14 +241,26 @@ func (w *MutatingHandler) Error(err error) {
 func (w *MutatingHandler) End() {
 }
 
-func TestFields(t *testing.T) {
+//
+// Used for cascade delete event testing.
+type DetailHandler struct {
+	StockEventHandler
+	deleted []string
+}
+
+func (h *DetailHandler) Deleted(e Event) {
+	h.deleted = append(
+		h.deleted,
+		e.Model.Pk())
+}
+
+func TestDefinition(t *testing.T) {
 	var err error
 	g := gomega.NewGomegaWithT(t)
-	table := Table{}
-	fields, err := table.Fields(&TestObject{})
+	md, err := Inspect(&TestObject{})
 	g.Expect(err).To(gomega.BeNil())
 	// ALL
-	g.Expect(fieldNames(fields)).To(gomega.Equal(
+	g.Expect(fieldNames(md.Fields)).To(gomega.Equal(
 		[]string{
 			"Parent",
 			"Phone",
@@ -231,9 +283,9 @@ func TestFields(t *testing.T) {
 			"D4",
 		}))
 	// PK
-	g.Expect(table.PkField(fields).Name).To(gomega.Equal("PK"))
+	g.Expect(md.PkField().Name).To(gomega.Equal("PK"))
 	// Natural keys
-	g.Expect(fieldNames(table.KeyFields(fields))).To(gomega.Equal([]string{"ID"}))
+	g.Expect(fieldNames(md.KeyFields())).To(gomega.Equal([]string{"ID"}))
 }
 
 func TestCRUD(t *testing.T) {
@@ -334,6 +386,131 @@ func TestCRUD(t *testing.T) {
 	objB = &TestObject{ID: objA.ID}
 	err = DB.Get(objB)
 	g.Expect(errors.Is(err, NotFound)).To(gomega.BeTrue())
+}
+
+func TestCascade(t *testing.T) {
+	var err error
+	g := gomega.NewGomegaWithT(t)
+	DB := New(
+		"/tmp/test-cascade.db",
+		&PlainObject{},
+		&DetailC{},
+		&DetailD{},
+		&DetailB{},
+		&DetailA{})
+	err = DB.Open(true)
+	g.Expect(err).To(gomega.BeNil())
+
+	id := func() int {
+		return int(serial.next(-1))
+	}
+
+	//
+	// Tree A.
+	treeA := &PlainObject{
+		ID:   0,
+		Name: "Emma",
+		Age:  18,
+	}
+	err = DB.Insert(treeA)
+	g.Expect(err).To(gomega.BeNil())
+	for a := 0; a < 3; a++ {
+		detailA := &DetailA{
+			PK: id(),
+			FK: treeA.ID,
+		}
+		err = DB.Insert(detailA)
+		g.Expect(err).To(gomega.BeNil())
+		for b := 0; b < 3; b++ {
+			detailB := &DetailB{
+				PK: id(),
+				FK: detailA.PK,
+			}
+			err = DB.Insert(detailB)
+			g.Expect(err).To(gomega.BeNil())
+			for c := 0; c < 3; c++ {
+				detailC := &DetailC{
+					PK: id(),
+					FK: detailB.PK,
+				}
+				err = DB.Insert(detailC)
+				g.Expect(err).To(gomega.BeNil())
+			}
+		}
+	}
+	//
+	// Tree B
+	treeB := &PlainObject{
+		ID:   1,
+		Name: "Ashley",
+		Age:  17,
+	}
+	err = DB.Insert(treeB)
+	g.Expect(err).To(gomega.BeNil())
+	for a := 10; a < 13; a++ {
+		detailA := &DetailA{
+			PK: id(),
+			FK: treeB.ID,
+		}
+		err = DB.Insert(detailA)
+		g.Expect(err).To(gomega.BeNil())
+		for b := 10; b < 13; b++ {
+			detailB := &DetailB{
+				PK: id(),
+				FK: detailA.PK,
+			}
+			err = DB.Insert(detailB)
+			g.Expect(err).To(gomega.BeNil())
+			for c := 10; c < 13; c++ {
+				detailC := &DetailC{
+					PK: id(),
+					FK: detailB.PK,
+				}
+				err = DB.Insert(detailC)
+				g.Expect(err).To(gomega.BeNil())
+			}
+		}
+	}
+
+	// Watch.
+	handler := &DetailHandler{}
+	_, _ = DB.Watch(&PlainObject{}, handler)
+	_, _ = DB.Watch(&DetailA{}, handler)
+	_, _ = DB.Watch(&DetailB{}, handler)
+	_, _ = DB.Watch(&DetailC{}, handler)
+
+	//
+	// Baseline totals.
+	n, _ := DB.Count(&DetailA{}, nil)
+	g.Expect(n).To(gomega.Equal(int64(6)))
+	n, _ = DB.Count(&DetailB{}, nil)
+	g.Expect(n).To(gomega.Equal(int64(18)))
+	n, _ = DB.Count(&DetailC{}, nil)
+	g.Expect(n).To(gomega.Equal(int64(54)))
+
+	// Delete tree A.
+	err = DB.Delete(treeA)
+	g.Expect(err).To(gomega.BeNil())
+
+	//
+	// Tree A gone.
+	n, _ = DB.Count(&DetailA{}, nil)
+	g.Expect(n).To(gomega.Equal(int64(3)))
+	n, _ = DB.Count(&DetailB{}, nil)
+	g.Expect(n).To(gomega.Equal(int64(9)))
+	n, _ = DB.Count(&DetailC{}, nil)
+	g.Expect(n).To(gomega.Equal(int64(27)))
+
+	for i := 0; i < 10; i++ {
+		time.Sleep(time.Millisecond * 10)
+		if len(handler.deleted) != 40 {
+			continue
+		} else {
+			break
+		}
+	}
+	g.Expect(len(handler.deleted)).To(gomega.Equal(40))
+
 }
 
 func TestTransactions(t *testing.T) {
@@ -1214,6 +1391,80 @@ func __TestConcurrency(t *testing.T) {
 	}
 
 	fmt.Println(time.Since(mark))
+}
+
+func TestDefinitions(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	list := Definitions{}
+	// Push
+	list.Push(&Definition{Kind: "0"})
+	list.Push(&Definition{Kind: "1"})
+	list.Push(&Definition{Kind: "2"})
+	g.Expect(list).To(gomega.Equal(
+		Definitions{
+			&Definition{Kind: "0"},
+			&Definition{Kind: "1"},
+			&Definition{Kind: "2"},
+		}))
+	// Pop
+	d2 := list.Pop()
+	g.Expect(d2.Kind).To(gomega.Equal("2"))
+	g.Expect(list).To(gomega.Equal(
+		Definitions{
+			&Definition{Kind: "0"},
+			&Definition{Kind: "1"},
+		}))
+	// Append
+	list.Push(&Definition{Kind: "2"})
+	g.Expect(list).To(gomega.Equal(
+		Definitions{
+			&Definition{Kind: "0"},
+			&Definition{Kind: "1"},
+			&Definition{Kind: "2"},
+		}))
+	// Delete
+	list.Delete(1)
+	g.Expect(list).To(gomega.Equal(
+		Definitions{
+			&Definition{Kind: "0"},
+			&Definition{Kind: "2"},
+		}))
+	list = Definitions{
+		&Definition{Kind: "0"},
+		&Definition{Kind: "1"},
+		&Definition{Kind: "2"},
+	}
+	list.Delete(0)
+	g.Expect(list).To(gomega.Equal(
+		Definitions{
+			&Definition{Kind: "1"},
+			&Definition{Kind: "2"},
+		}))
+	list = Definitions{
+		&Definition{Kind: "0"},
+		&Definition{Kind: "1"},
+		&Definition{Kind: "2"},
+	}
+	list.Delete(2)
+	g.Expect(list).To(gomega.Equal(
+		Definitions{
+			&Definition{Kind: "0"},
+			&Definition{Kind: "1"},
+		}))
+	// Head and Top.
+	list = Definitions{
+		&Definition{Kind: "0"},
+		&Definition{Kind: "1"},
+		&Definition{Kind: "2"},
+	}
+	g.Expect(list.Top().Kind).To(gomega.Equal("2"))
+	g.Expect(list.Head(false).Kind).To(gomega.Equal("0"))
+	g.Expect(list.Head(true).Kind).To(gomega.Equal("0"))
+	g.Expect(list).To(gomega.Equal(
+		Definitions{
+			&Definition{Kind: "1"},
+			&Definition{Kind: "2"},
+		}))
 }
 
 func fieldNames(fields []*Field) (names []string) {
