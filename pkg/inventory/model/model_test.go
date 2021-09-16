@@ -10,8 +10,10 @@ import (
 	"time"
 )
 
+//
+// Adjust default.
 func init() {
-	DefaultDetail = MaxDetail
+	DefaultDetail = 5
 }
 
 type TestEncoded struct {

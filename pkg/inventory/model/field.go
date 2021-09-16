@@ -18,8 +18,14 @@ const (
 	MaxDetail = 9
 )
 
-// Default detail level.
-var DefaultDetail = 1
+// The default (field) detail level when listing models.
+// Applications using custom detail levels
+// must adjust to highest level used.
+// Example:
+//   func init() {
+//     model.DefaultDetail = 2
+//   }
+var DefaultDetail = 0
 
 //
 // Regex used for `pk(fields)` tags.
