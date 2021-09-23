@@ -20,10 +20,6 @@ import (
 type RequestHandler interface {
 	// Add routes to the `gin` router.
 	AddRoutes(*gin.Engine)
-	// List resources in a REST collection.
-	List(*gin.Context)
-	// Get a specific REST resource.
-	Get(*gin.Context)
 }
 
 //

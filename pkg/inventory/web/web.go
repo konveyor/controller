@@ -42,7 +42,7 @@ type WebServer struct {
 // Start the web-server.
 // Initializes `gin` with routes and CORS origins.
 // Creates an http server to handle TLS
-func (w *WebServer) Start() {
+func (w *WebServer) Start(middleware ...gin.HandlerFunc) {
 	router := gin.Default()
 	router.Use(cors.New(cors.Config{
 		AllowMethods:     []string{"GET"},
@@ -51,6 +51,9 @@ func (w *WebServer) Start() {
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
+	for _, h := range middleware {
+		router.Use(h)
+	}
 	w.buildOrigins()
 	w.addRoutes(router)
 	if w.TLS.Enabled {
