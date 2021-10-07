@@ -185,7 +185,36 @@ type EqPredicate struct {
 //
 // Build.
 func (p *EqPredicate) Build(options *ListOptions) error {
-	return p.build("=", options)
+	f, found := p.match(options.fields)
+	if !found {
+		return liberr.Wrap(PredicateRefErr)
+	}
+	pv := reflect.ValueOf(p.Value)
+	switch pv.Kind() {
+	case reflect.Slice:
+		params := []string{}
+		for i := 0; i < pv.Len(); i++ {
+			v, err := f.AsValue(pv.Index(i).Interface())
+			if err != nil {
+				return err
+			}
+			params = append(
+				params,
+				options.Param(f.Name, v))
+		}
+		p.expr = strings.Join(
+			[]string{
+				f.Name,
+				"IN",
+				"(",
+				strings.Join(params, ","),
+				")"},
+			" ")
+	default:
+		return p.build("=", options)
+	}
+
+	return nil
 }
 
 //
