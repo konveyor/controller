@@ -653,6 +653,17 @@ func TestList(t *testing.T) {
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(len(list)).To(gomega.Equal(1))
 	g.Expect(list[0].ID).To(gomega.Equal(0))
+	// List = (multiple).
+	list = []TestObject{}
+	err = DB.List(
+		&list,
+		ListOptions{
+			Predicate: Eq("ID", []int{2, 4}),
+		})
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(len(list)).To(gomega.Equal(2))
+	g.Expect(list[0].ID).To(gomega.Equal(2))
+	g.Expect(list[1].ID).To(gomega.Equal(4))
 	// List != AND
 	list = []TestObject{}
 	err = DB.List(
