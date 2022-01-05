@@ -105,7 +105,7 @@ func Match(labels Labels) *LabelPredicate {
 // List predicate.
 type Predicate interface {
 	// Build the predicate.
-	Build(*ListOptions) error
+	Build(*FilterOptions) error
 	// Get the SQL expression.
 	Expr() string
 }
@@ -142,7 +142,7 @@ func (p *SimplePredicate) field(name string, fields []*Field) (*Field, bool) {
 
 //
 // Build.
-func (p *SimplePredicate) build(operator string, options *ListOptions) error {
+func (p *SimplePredicate) build(operator string, options *FilterOptions) error {
 	f, found := p.match(options.fields)
 	if !found {
 		return liberr.Wrap(PredicateRefErr)
@@ -184,7 +184,7 @@ type EqPredicate struct {
 
 //
 // Build.
-func (p *EqPredicate) Build(options *ListOptions) error {
+func (p *EqPredicate) Build(options *FilterOptions) error {
 	f, found := p.match(options.fields)
 	if !found {
 		return liberr.Wrap(PredicateRefErr)
@@ -231,7 +231,7 @@ type NeqPredicate struct {
 
 //
 // Build.
-func (p *NeqPredicate) Build(options *ListOptions) error {
+func (p *NeqPredicate) Build(options *FilterOptions) error {
 	return p.build("!=", options)
 }
 
@@ -249,7 +249,7 @@ type GtPredicate struct {
 
 //
 // Build.
-func (p *GtPredicate) Build(options *ListOptions) error {
+func (p *GtPredicate) Build(options *FilterOptions) error {
 	f, found := p.match(options.fields)
 	if !found {
 		return liberr.Wrap(PredicateRefErr)
@@ -283,7 +283,7 @@ type LtPredicate struct {
 
 //
 // Build.
-func (p *LtPredicate) Build(options *ListOptions) error {
+func (p *LtPredicate) Build(options *FilterOptions) error {
 	f, found := p.match(options.fields)
 	if !found {
 		return liberr.Wrap(PredicateRefErr)
@@ -324,7 +324,7 @@ type AndPredicate struct {
 
 //
 // Build.
-func (p *AndPredicate) Build(options *ListOptions) error {
+func (p *AndPredicate) Build(options *FilterOptions) error {
 	for _, p := range p.Predicates {
 		err := p.Build(options)
 		if err != nil {
@@ -356,7 +356,7 @@ type OrPredicate struct {
 
 //
 // Build.
-func (p *OrPredicate) Build(options *ListOptions) error {
+func (p *OrPredicate) Build(options *FilterOptions) error {
 	for _, p := range p.Predicates {
 		err := p.Build(options)
 		if err != nil {
@@ -386,7 +386,7 @@ type LabelPredicate struct {
 	// Labels
 	Labels
 	// List options.
-	options *ListOptions
+	options *FilterOptions
 	// Parent PK field name.
 	pk *Field
 	// SQL expression.
@@ -395,7 +395,7 @@ type LabelPredicate struct {
 
 //
 // Build.
-func (p *LabelPredicate) Build(options *ListOptions) error {
+func (p *LabelPredicate) Build(options *FilterOptions) error {
 	p.options = options
 	for _, f := range options.fields {
 		if f.Pk() {

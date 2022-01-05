@@ -32,7 +32,7 @@ type DB interface {
 	// Insert a model.
 	Insert(Model) error
 	// Update a model.
-	Update(Model) error
+	Update(Model, ...Predicate) error
 	// Delete a model.
 	Delete(Model) error
 	// Watch a model collection.
@@ -259,7 +259,7 @@ func (r *Client) Insert(model Model) (err error) {
 //
 // Update the model.
 // Delegated to Tx.Update().
-func (r *Client) Update(model Model) (err error) {
+func (r *Client) Update(model Model, predicate ...Predicate) (err error) {
 	tx, err := r.Begin()
 	if err != nil {
 		return
@@ -271,7 +271,7 @@ func (r *Client) Update(model Model) (err error) {
 			_ = tx.End()
 		}
 	}()
-	err = tx.Update(model)
+	err = tx.Update(model, predicate...)
 
 	return
 }
@@ -520,7 +520,7 @@ func (r *Tx) Insert(model Model) (err error) {
 
 //
 // Update the model.
-func (r *Tx) Update(model Model) (err error) {
+func (r *Tx) Update(model Model, predicate ...Predicate) (err error) {
 	mark := time.Now()
 	current := model
 	current = Clone(model)
@@ -528,7 +528,7 @@ func (r *Tx) Update(model Model) (err error) {
 	if err != nil {
 		return
 	}
-	err = Table{r.real}.Update(model)
+	err = Table{r.real}.Update(model, predicate...)
 	if err != nil {
 		return
 	}

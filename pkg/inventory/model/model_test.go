@@ -375,6 +375,12 @@ func TestCRUD(t *testing.T) {
 	err = DB.Update(objA)
 	g.Expect(err).To(gomega.BeNil())
 	g.Expect(objA.Rev).To(gomega.Equal(2))
+	// Update with predicate.
+	objA.Name = "Fred"
+	objA.Age = 14
+	err = DB.Update(objA, Eq("Age", 21))
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(objA.Rev).To(gomega.Equal(3))
 	// Get
 	objB = &TestObject{ID: objA.ID}
 	err = DB.Get(objB)
