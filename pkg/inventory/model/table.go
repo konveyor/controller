@@ -368,9 +368,8 @@ func (t Table) Update(model interface{}, predicate ...Predicate) (err error) {
 	}
 	t.EnsurePk(md)
 	options := &ListOptions{}
-	for _, p := range predicate {
-		options.Predicate = p
-		break
+	if len(predicate) > 0 {
+		options.Predicate = And(predicate...)
 	}
 	stmt, err := t.updateSQL(md, options)
 	if err != nil {
