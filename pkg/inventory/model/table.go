@@ -67,6 +67,9 @@ SET
 {{ end -}}
 WHERE
 {{ .Pk.Name }} = {{ .Pk.Param }}
+{{ if .Predicate -}}
+AND {{ .Predicate.Expr }}
+{{ end -}}
 ;
 `
 
@@ -358,17 +361,21 @@ func (t Table) Insert(model interface{}) (err error) {
 //
 // Update the model in the DB.
 // Expects the primary key (PK) to be set.
-func (t Table) Update(model interface{}) (err error) {
+func (t Table) Update(model interface{}, predicate ...Predicate) (err error) {
 	md, err := Inspect(model)
 	if err != nil {
 		return
 	}
 	t.EnsurePk(md)
-	stmt, err := t.updateSQL(md)
+	options := &ListOptions{}
+	if len(predicate) > 0 {
+		options.Predicate = And(predicate...)
+	}
+	stmt, err := t.updateSQL(md, options)
 	if err != nil {
 		return
 	}
-	params := t.Params(md)
+	params := append(t.Params(md), options.Params()...)
 	r, err := t.DB.Exec(stmt, params...)
 	if err != nil {
 		err = liberr.Wrap(
@@ -775,20 +782,25 @@ func (t Table) insertSQL(md *Definition) (sql string, err error) {
 
 //
 // Build model update SQL.
-func (t Table) updateSQL(md *Definition) (sql string, err error) {
+func (t Table) updateSQL(md *Definition, options *FilterOptions) (sql string, err error) {
 	tpl := template.New("")
 	tpl, err = tpl.Parse(UpdateSQL)
 	if err != nil {
 		err = liberr.Wrap(err)
 		return
 	}
+	err = options.Build(md)
+	if err != nil {
+		return
+	}
 	bfr := &bytes.Buffer{}
 	err = tpl.Execute(
 		bfr,
 		TmplData{
-			Table:  md.Kind,
-			Fields: md.MutableFields(),
-			Pk:     md.PkField(),
+			Table:   md.Kind,
+			Fields:  md.MutableFields(),
+			Options: options,
+			Pk:      md.PkField(),
 		})
 	if err != nil {
 		err = liberr.Wrap(err)
@@ -887,7 +899,7 @@ func (t Table) listSQL(md *Definition, options *ListOptions) (sql string, err er
 
 //
 // Build model count SQL.
-func (t Table) countSQL(md *Definition, options *ListOptions) (sql string, err error) {
+func (t Table) countSQL(md *Definition, options *FilterOptions) (sql string, err error) {
 	tpl := template.New("")
 	tpl, err = tpl.Parse(ListSQL)
 	if err != nil {
@@ -954,8 +966,8 @@ type TmplData struct {
 	Keys []*Field
 	// Primary key.
 	Pk *Field
-	// List options.
-	Options *ListOptions
+	// Filter options.
+	Options *FilterOptions
 	// Count
 	Count bool
 }
@@ -979,8 +991,8 @@ func (t TmplData) Sort() []int {
 }
 
 //
-// List options.
-type ListOptions struct {
+// FilterOptions options.
+type FilterOptions struct {
 	// Pagination.
 	Page *Page
 	// Sort by field position.
@@ -1002,7 +1014,7 @@ type ListOptions struct {
 
 //
 // Validate options.
-func (l *ListOptions) Build(md *Definition) (err error) {
+func (l *FilterOptions) Build(md *Definition) (err error) {
 	l.table = md.Kind
 	l.fields = md.Fields
 	if l.Predicate != nil {
@@ -1015,7 +1027,7 @@ func (l *ListOptions) Build(md *Definition) (err error) {
 //
 // Get an appropriate parameter name.
 // Builds a parameter and adds it to the options.param list.
-func (l *ListOptions) Param(name string, value interface{}) (p string) {
+func (l *FilterOptions) Param(name string, value interface{}) (p string) {
 	name = fmt.Sprintf("%s%d", name, len(l.params))
 	l.params = append(l.params, sql.Named(name, value))
 	p = ":" + name
@@ -1024,7 +1036,7 @@ func (l *ListOptions) Param(name string, value interface{}) (p string) {
 
 //
 // Fields filtered by detail level.
-func (l *ListOptions) Fields() (filtered []*Field) {
+func (l *FilterOptions) Fields() (filtered []*Field) {
 	for _, f := range l.fields {
 		if f.MatchDetail(l.Detail) {
 			filtered = append(filtered, f)
@@ -1036,6 +1048,10 @@ func (l *ListOptions) Fields() (filtered []*Field) {
 
 //
 // Get params referenced by the predicate.
-func (l *ListOptions) Params() []interface{} {
+func (l *FilterOptions) Params() []interface{} {
 	return l.params
 }
+
+//
+// List options
+type ListOptions = FilterOptions
