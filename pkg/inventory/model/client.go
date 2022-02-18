@@ -29,6 +29,8 @@ type DB interface {
 	Count(Model, Predicate) (int64, error)
 	// Begin a transaction.
 	Begin(...string) (*Tx, error)
+	// With transaction.
+	With(fn func(*Tx) error, labels ...string) error
 	// Insert a model.
 	Insert(Model) error
 	// Update a model.
@@ -233,6 +235,24 @@ func (r *Client) Begin(labels ...string) (tx *Tx, error error) {
 
 	r.log.V(4).Info("tx begin.", "duration", time.Since(mark))
 
+	return
+}
+
+//
+// With transaction.
+func (r *Client) With(fn func(*Tx) error, labels ...string) (err error) {
+	tx, err := r.Begin(labels...)
+	if err != nil {
+		return
+	}
+	defer func() {
+		_ = tx.End()
+	}()
+	err = fn(tx)
+	if err != nil {
+		return
+	}
+	err = tx.Commit()
 	return
 }
 

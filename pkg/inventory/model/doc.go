@@ -113,6 +113,28 @@
 //           },
 //       })
 //
+// Transactions.
+//
+// Explicit:
+//   tx, err := DB.Begin()
+//   if err != nil {
+//     return
+//   }
+//   defer func() {
+//     tx.End()
+//   }()
+//   err  = tx.Insert(&person)
+//   if err != nil {
+//     return
+//   }
+//  err = tx.Commit()
+//
+// Using With:
+//   err := DB.With(func(tx *Tx) (err error) {
+//     err  = tx.Insert(&person)
+//     return
+//   })
+//
 package model
 
 import (
