@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	liberr "github.com/konveyor/controller/pkg/error"
 	"github.com/konveyor/controller/pkg/ref"
 	"github.com/onsi/gomega"
 	"math"
@@ -549,6 +550,66 @@ func TestTransactions(t *testing.T) {
 		err = DB.Get(object)
 		g.Expect(err).To(gomega.BeNil())
 	}
+}
+
+func TestWithTxSucceeded(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	DB := New(
+		"/tmp/test-withtx-succeeded.db",
+		&TestObject{})
+	err := DB.Open(true)
+	g.Expect(err).To(gomega.BeNil())
+	labels := []string{"A", "B"}
+	n := 10
+	//
+	// Insert in TX.
+	insert := func(tx *Tx) (err error) {
+		g.Expect(tx.labels).To(gomega.Equal(labels))
+		for i := 0; i < n; i++ {
+			object := &TestObject{
+				ID:   i,
+				Name: "Elmer",
+			}
+			err = tx.Insert(object)
+			g.Expect(err).To(gomega.BeNil())
+			object = &TestObject{ID: object.ID}
+		}
+		return
+	}
+	//
+	// Test committed.
+	err = DB.With(insert, labels...)
+	for i := 0; i < n; i++ {
+		object := &TestObject{ID: i}
+		err = DB.Get(object)
+		g.Expect(err).To(gomega.BeNil())
+	}
+}
+
+func TestWithTxFailed(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	DB := New(
+		"/tmp/test-withtx-failed.db",
+		&TestObject{})
+	err := DB.Open(true)
+	g.Expect(err).To(gomega.BeNil())
+	//
+	// Insert in TX with duplicate key error.
+	fakeErr := liberr.New("Faked")
+	insert := func(tx *Tx) (err error) {
+		object := &TestObject{}
+		err = tx.Insert(object)
+		g.Expect(err).To(gomega.BeNil())
+		err = fakeErr
+		return
+	}
+	//
+	// Test not committed.
+	err = DB.With(insert)
+	g.Expect(errors.Is(err, fakeErr)).To(gomega.BeTrue())
+	n, err := DB.Count(&TestObject{}, nil)
+	g.Expect(err).To(gomega.BeNil())
+	g.Expect(n).To(gomega.Equal(int64(0)))
 }
 
 func TestList(t *testing.T) {
