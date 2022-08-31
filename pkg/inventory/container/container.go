@@ -153,7 +153,9 @@ type Collector interface {
 	// Get the associated DB.
 	DB() model.DB
 	// Test connection with credentials.
-	Test() error
+	// Return the status code of the connection
+	// 0 = Ignore
+	Test() (int, error)
 	// Reset
 	Reset()
 }

@@ -136,8 +136,8 @@ func (r *Collector) UpdateThreshold(m libmodel.Model) {
 }
 
 // Test connection with credentials.
-func (r *Collector) Test() error {
-	return r.buildClient()
+func (r *Collector) Test() (int, error) {
+	return 0, r.buildClient()
 }
 
 //
