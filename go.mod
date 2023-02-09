@@ -5,8 +5,9 @@ go 1.14
 require (
 	github.com/appscode/jsonpatch v1.0.1 // indirect
 	github.com/evanphx/json-patch v4.5.0+incompatible // indirect
+	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/gin-contrib/cors v1.3.1
-	github.com/gin-gonic/gin v1.7.2
+	github.com/gin-gonic/gin v1.7.7
 	github.com/go-logr/logr v0.3.0
 	github.com/go-logr/zapr v0.3.0
 	github.com/gogo/protobuf v1.3.1 // indirect
@@ -25,6 +26,7 @@ require (
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.1.0 // indirect
+	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/testify v1.6.1 // indirect
 	go.uber.org/atomic v1.4.0 // indirect
 	go.uber.org/zap v1.10.0
@@ -35,8 +37,9 @@ require (
 	k8s.io/api v0.17.4
 	k8s.io/apiextensions-apiserver v0.17.4 // indirect
 	k8s.io/apimachinery v0.17.4
-	k8s.io/apiserver v0.17.1
 	k8s.io/client-go v0.17.4
+	k8s.io/klog v1.0.0 // indirect
+	k8s.io/kube-openapi v0.0.0-20191107075043-30be4d16710a // indirect
 	sigs.k8s.io/controller-runtime v0.1.11
 	sigs.k8s.io/testing_frameworks v0.1.2 // indirect
 )
