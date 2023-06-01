@@ -5,12 +5,12 @@ go 1.14
 require (
 	github.com/appscode/jsonpatch v1.0.1 // indirect
 	github.com/evanphx/json-patch v4.5.0+incompatible // indirect
+	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/gin-contrib/cors v1.3.1
-	github.com/gin-gonic/gin v1.7.2
+	github.com/gin-gonic/gin v1.9.1
 	github.com/go-logr/logr v0.3.0
 	github.com/go-logr/zapr v0.3.0
 	github.com/gogo/protobuf v1.3.1 // indirect
-	github.com/google/go-cmp v0.5.2 // indirect
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/google/uuid v1.1.2
 	github.com/googleapis/gnostic v0.2.0 // indirect
@@ -25,18 +25,17 @@ require (
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.1.0 // indirect
-	github.com/stretchr/testify v1.6.1 // indirect
+	github.com/spf13/pflag v1.0.5 // indirect
 	go.uber.org/atomic v1.4.0 // indirect
 	go.uber.org/zap v1.10.0
-	golang.org/x/crypto v0.0.0-20201002170205-7f63de1d35b0 // indirect
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43 // indirect
-	golang.org/x/sys v0.0.0-20200909081042-eff7692f9009 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/api v0.17.4
 	k8s.io/apiextensions-apiserver v0.17.4 // indirect
 	k8s.io/apimachinery v0.17.4
-	k8s.io/apiserver v0.17.1
 	k8s.io/client-go v0.17.4
+	k8s.io/klog v1.0.0 // indirect
+	k8s.io/kube-openapi v0.0.0-20191107075043-30be4d16710a // indirect
 	sigs.k8s.io/controller-runtime v0.1.11
 	sigs.k8s.io/testing_frameworks v0.1.2 // indirect
 )
