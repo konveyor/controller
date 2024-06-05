@@ -2,10 +2,11 @@ package logging
 
 import (
 	"errors"
+	"testing"
+
 	"github.com/go-logr/logr"
 	liberr "github.com/konveyor/controller/pkg/error"
 	"github.com/onsi/gomega"
-	"testing"
 )
 
 type entry struct {
@@ -18,16 +19,16 @@ type fakeBuilder struct {
 }
 
 func (b *fakeBuilder) New() logr.Logger {
-	return &fake{
+	return logr.New(&fake{
 		entry: []entry{},
-	}
+	})
 }
 
 func (b *fakeBuilder) V(level int, f logr.Logger) logr.Logger {
-	return &fake{
+	return logr.New(&fake{
 		debug: Settings.atDebug(level),
 		entry: []entry{},
-	}
+	})
 }
 
 type fake struct {
@@ -37,7 +38,7 @@ type fake struct {
 	name   string
 }
 
-func (l *fake) Info(message string, kvpair ...interface{}) {
+func (l *fake) Info(level int, message string, kvpair ...interface{}) {
 	l.entry = append(
 		l.entry,
 		entry{
@@ -56,26 +57,29 @@ func (l *fake) Error(err error, message string, kvpair ...interface{}) {
 		})
 }
 
-func (l *fake) Enabled() bool {
+func (l *fake) Enabled(level int) bool {
 	return true
 }
 
-func (l *fake) V(level int) logr.InfoLogger {
-	return &fake{
+func (l *fake) V(level int) logr.Logger {
+	return logr.New(&fake{
 		entry: []entry{},
-	}
+	})
 }
 
-func (l *fake) WithName(name string) logr.Logger {
+func (l *fake) WithName(name string) logr.LogSink {
 	l.name = name
 	return l
 }
 
-//
 // Get logger with values.
-func (l *fake) WithValues(kvpair ...interface{}) logr.Logger {
+func (l *fake) WithValues(kvpair ...interface{}) logr.LogSink {
 	l.values = kvpair
 	return l
+}
+
+func (l *fake) Init(info logr.RuntimeInfo) {
+	// No init needed.
 }
 
 func TestReal(t *testing.T) {
@@ -83,8 +87,8 @@ func TestReal(t *testing.T) {
 	//
 	// Real
 	log := WithName("Test")
-	log.Info("hello")
-	log.Error(errors.New("A"), "thing failed")
+	log.Info(1, "hello")
+	log.Error(errors.New("A"), "the thing", "failed")
 	log.Trace(errors.New("B"))
 	g.Expect(log.name).To(gomega.Equal("Test"))
 }
@@ -95,24 +99,27 @@ func TestFake(t *testing.T) {
 	Factory = &fakeBuilder{}
 
 	log := WithName("Test")
-	f := log.Real.(*fake)
+	f := log.Real.GetSink().(*fake)
 	g.Expect(f.name).To(gomega.Equal("Test"))
 	// Info
-	log.Info("hello")
+	log.Info(3, "hello")
 	g.Expect(len(f.entry)).To(gomega.Equal(1))
-	g.Expect(len(f.entry[0].kvpair)).To(gomega.Equal(0))
+	g.Expect(len(f.entry[0].kvpair)).To(gomega.Equal(1))
 	// Error
 	log.Error(errors.New("C"), "thing failed")
 	g.Expect(len(f.entry)).To(gomega.Equal(2))
 	g.Expect(len(f.entry[1].kvpair)).To(gomega.Equal(0))
+	g.Expect(f.entry[1].err).To(gomega.Equal(errors.New("C")))
 	// nil Error
 	log.Error(nil, "thing failed")
 	g.Expect(len(f.entry)).To(gomega.Equal(2))
 	g.Expect(len(f.entry[1].kvpair)).To(gomega.Equal(0))
+	g.Expect(f.entry[1].err).To(gomega.Equal(errors.New("C")))
 	// Trace
 	log.Trace(errors.New("D"))
 	g.Expect(len(f.entry)).To(gomega.Equal(3))
 	g.Expect(len(f.entry[2].kvpair)).To(gomega.Equal(0))
+	g.Expect(f.entry[2].err).To(gomega.Equal(errors.New("D")))
 	// Error (wrapped)
 	log.Error(liberr.Wrap(errors.New("C wrapped")), "thing failed")
 	g.Expect(len(f.entry)).To(gomega.Equal(4))
@@ -152,55 +159,65 @@ func TestFake(t *testing.T) {
 	Settings.Level = 0
 	log = WithName("level-testing")
 	log0 := log.V(0)
-	g.Expect(log0.(*Logger).Real.(*fake).debug).To(gomega.BeFalse())
+	logfake := log0.GetSink().(*Logger).Real.GetSink().(*fake)
+	g.Expect(logfake.debug).To(gomega.BeFalse())
 	log0.Info("Test-0")
-	g.Expect(len(log0.(*Logger).Real.(*fake).entry)).To(gomega.Equal(1))
+	g.Expect(len(logfake.entry)).To(gomega.Equal(1))
 	log1 := log.V(1)
+	logfake = log1.GetSink().(*Logger).Real.GetSink().(*fake)
 	log1.Info("Test-1")
-	g.Expect(len(log1.(*Logger).Real.(*fake).entry)).To(gomega.Equal(0))
+	g.Expect(len(logfake.entry)).To(gomega.Equal(0))
 	// level-4
 	Settings.Level = Settings.DebugThreshold
 	log = WithName("level-testing")
 	log0 = log.V(2)
-	g.Expect(log0.(*Logger).Real.(*fake).debug).To(gomega.BeFalse())
+	logfake = log0.GetSink().(*Logger).Real.GetSink().(*fake)
+	g.Expect(logfake.debug).To(gomega.BeFalse())
 	log0.Info("Test-0")
-	g.Expect(len(log0.(*Logger).Real.(*fake).entry)).To(gomega.Equal(1))
+	g.Expect(len(logfake.entry)).To(gomega.Equal(1))
 	log1 = log.V(Settings.DebugThreshold)
+	logfake = log1.GetSink().(*Logger).Real.GetSink().(*fake)
 	log1.Info("Test-1")
-	g.Expect(len(log1.(*Logger).Real.(*fake).entry)).To(gomega.Equal(1))
-	log2 := log1.V(Settings.DebugThreshold + 1)
-	g.Expect(log2.(*Logger).Real.(*fake).debug).To(gomega.BeTrue())
+	g.Expect(len(logfake.entry)).To(gomega.Equal(1))
+	log2 := log.V(Settings.DebugThreshold + 1)
+	logfake = log2.GetSink().(*Logger).Real.GetSink().(*fake)
+	g.Expect(logfake.debug).To(gomega.BeTrue())
 	log2.Info("Test-2")
-	g.Expect(len(log2.(*Logger).Real.(*fake).entry)).To(gomega.Equal(0))
+	g.Expect(len(logfake.entry)).To(gomega.Equal(0))
 
 	// level-1
 	err := liberr.New("")
 	Settings.Level = 0
 	log = WithName("level-testing")
 	log0 = log.V(0)
-	g.Expect(log0.(*Logger).Real.(*fake).debug).To(gomega.BeFalse())
+	logfake = log0.GetSink().(*Logger).Real.GetSink().(*fake)
+	g.Expect(logfake.debug).To(gomega.BeFalse())
 	log0.Error(err, "Test-0")
-	g.Expect(len(log0.(*Logger).Real.(*fake).entry)).To(gomega.Equal(1))
+	g.Expect(len(logfake.entry)).To(gomega.Equal(1))
 	log1 = log.V(1)
+	logfake = log1.GetSink().(*Logger).Real.GetSink().(*fake)
 	log1.Error(err, "Test-1")
-	g.Expect(len(log1.(*Logger).Real.(*fake).entry)).To(gomega.Equal(0))
+	g.Expect(len(logfake.entry)).To(gomega.Equal(0))
 	// level-4
 	Settings.Level = Settings.DebugThreshold
 	log = WithName("level-testing")
 	log0 = log.V(2)
-	g.Expect(log0.(*Logger).Real.(*fake).debug).To(gomega.BeFalse())
+	logfake = log0.GetSink().(*Logger).Real.GetSink().(*fake)
+	g.Expect(logfake.debug).To(gomega.BeFalse())
 	log0.Error(err, "Test-0")
-	g.Expect(len(log0.(*Logger).Real.(*fake).entry)).To(gomega.Equal(1))
+	g.Expect(len(logfake.entry)).To(gomega.Equal(1))
 	log1 = log.V(Settings.DebugThreshold)
+	logfake = log1.GetSink().(*Logger).Real.GetSink().(*fake)
 	log1.Error(err, "Test-1")
-	g.Expect(len(log1.(*Logger).Real.(*fake).entry)).To(gomega.Equal(1))
-	log2 = log1.V(Settings.DebugThreshold + 1)
-	g.Expect(log2.(*Logger).Real.(*fake).debug).To(gomega.BeTrue())
+	g.Expect(len(logfake.entry)).To(gomega.Equal(1))
+	log2 = log.V(Settings.DebugThreshold + 1)
+	logfake = log2.GetSink().(*Logger).Real.GetSink().(*fake)
+	g.Expect(logfake.debug).To(gomega.BeTrue())
 	log2.Error(err, "Test-2")
-	g.Expect(len(log2.(*Logger).Real.(*fake).entry)).To(gomega.Equal(0))
+	g.Expect(len(logfake.entry)).To(gomega.Equal(0))
 
 	// Test level preserved.
-	log3 := log.V(3).WithName("another").WithValues("A", 1)
+	log3 := log.V(3).WithName("another").WithValues("A", 1).GetSink()
 	g.Expect(log3.(*Logger).name).To(gomega.Equal("another"))
 	g.Expect(log3.(*Logger).level).To(gomega.Equal(log3.(*Logger).level))
 }

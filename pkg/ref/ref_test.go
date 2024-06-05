@@ -1,14 +1,14 @@
 package ref
 
 import (
+	"testing"
+
 	"github.com/onsi/gomega"
 	"k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"testing"
 )
 
 type _ThingSpec struct {
@@ -25,7 +25,7 @@ type _Thing struct {
 }
 
 func (t *_Thing) GetObjectKind() schema.ObjectKind {
-	return nil
+	return t.TypeMeta.GetObjectKind()
 }
 
 func (t *_Thing) DeepCopyObject() runtime.Object {
@@ -37,6 +37,9 @@ func TestFindRefs(t *testing.T) {
 
 	// Setup
 	thing := &_Thing{
+		TypeMeta: meta.TypeMeta{
+			Kind: "Thing",
+		},
 		ObjectMeta: meta.ObjectMeta{
 			Namespace: "ns0",
 			Name:      "joe",
@@ -93,7 +96,6 @@ func TestMapperCreate(t *testing.T) {
 	mapper := EventMapper{Map: m}
 	mapper.Create(
 		event.CreateEvent{
-			Meta:   thing,
 			Object: thing,
 		})
 
@@ -162,14 +164,11 @@ func TestMapperUpdate(t *testing.T) {
 	mapper := EventMapper{Map: m}
 	mapper.Create(
 		event.CreateEvent{
-			Meta:   old,
 			Object: old,
 		})
 	mapper.Update(
 		event.UpdateEvent{
-			MetaOld:   old,
 			ObjectOld: old,
-			MetaNew:   new,
 			ObjectNew: new,
 		})
 
@@ -229,7 +228,6 @@ func TestMapperDelete(t *testing.T) {
 	mapper := EventMapper{Map: m}
 	mapper.Create(
 		event.CreateEvent{
-			Meta:   thing,
 			Object: thing,
 		})
 	owner := Owner{
@@ -254,7 +252,6 @@ func TestMapperDelete(t *testing.T) {
 	// Test
 	mapper.Delete(
 		event.DeleteEvent{
-			Meta:   thing,
 			Object: thing,
 		})
 
@@ -268,6 +265,9 @@ func TestHandler(t *testing.T) {
 	// Setup
 	Map.Content = map[Target]map[Owner]bool{}
 	owner := &_Thing{
+		TypeMeta: meta.TypeMeta{
+			Kind: "ThingB",
+		},
 		ObjectMeta: meta.ObjectMeta{
 			Namespace: "ns0",
 			Name:      "joe",
@@ -295,6 +295,9 @@ func TestHandler(t *testing.T) {
 				Namespace: "nsB",
 				Name:      "thingB",
 			},
+			TypeMeta: meta.TypeMeta{
+				Kind: "ThingB",
+			},
 		},
 	}
 
@@ -302,16 +305,12 @@ func TestHandler(t *testing.T) {
 	mapper := EventMapper{Map}
 	mapper.Create(
 		event.CreateEvent{
-			Meta:   owner,
 			Object: owner,
 		})
 
 	list := GetRequests(
-		ToKind(&_Thing{}),
-		handler.MapObject{
-			Meta:   target,
-			Object: target,
-		})
+		target,
+		"_Thing")
 
 	g.Expect(len(list)).To(gomega.Equal(1))
 }

@@ -1,10 +1,11 @@
 package logging
 
 import (
-	"github.com/go-logr/logr"
-	liberr "github.com/konveyor/controller/pkg/error"
 	"os"
 	"strconv"
+
+	"github.com/go-logr/logr"
+	liberr "github.com/konveyor/controller/pkg/error"
 )
 
 const (
@@ -17,7 +18,6 @@ const (
 	EnvLevel       = "LOG_LEVEL"
 )
 
-//
 // Settings.
 var Settings _Settings
 
@@ -25,7 +25,6 @@ func init() {
 	Settings.Load()
 }
 
-//
 // Logger factory.
 var Factory Builder
 
@@ -33,7 +32,6 @@ func init() {
 	Factory = &ZapBuilder{}
 }
 
-//
 // Logger
 // Delegates functionality to the wrapped `Real` logger.
 // Provides:
@@ -48,7 +46,6 @@ type Logger struct {
 	level int
 }
 
-//
 // Get a named logger.
 func WithName(name string, kvpair ...interface{}) *Logger {
 	l := &Logger{
@@ -61,15 +58,13 @@ func WithName(name string, kvpair ...interface{}) *Logger {
 	return l
 }
 
-//
 // Logs at info.
-func (l *Logger) Info(message string, kvpair ...interface{}) {
+func (l *Logger) Info(level int, msg string, keysAndValues ...any) {
 	if Settings.allowed(l.level) {
-		l.Real.Info(message, kvpair...)
+		l.Real.Info(msg, keysAndValues)
 	}
 }
 
-//
 // Logs an error.
 func (l *Logger) Error(err error, message string, kvpair ...interface{}) {
 	if err == nil {
@@ -109,31 +104,28 @@ func (l *Logger) Error(err error, message string, kvpair ...interface{}) {
 	l.Real.Error(err, message, kvpair...)
 }
 
-//
 // Logs an error without a description.
 func (l *Logger) Trace(err error, kvpair ...interface{}) {
 	l.Error(err, None, kvpair...)
 }
 
-//
 // Get whether logger is enabled.
-func (l *Logger) Enabled() bool {
+func (l *Logger) Enabled(level int) bool {
 	return l.Real.Enabled()
 }
 
-//
 // Get logger with verbosity level.
-func (l *Logger) V(level int) logr.InfoLogger {
-	return &Logger{
-		Real:  Factory.V(level, l.Real),
-		name:  l.name,
-		level: level,
-	}
+func (l *Logger) V(level int) logr.Logger {
+	return logr.New(
+		&Logger{
+			Real:  Factory.V(level, l.Real),
+			name:  l.name,
+			level: level,
+		})
 }
 
-//
 // Get logger with name.
-func (l *Logger) WithName(name string) logr.Logger {
+func (l *Logger) WithName(name string) logr.LogSink {
 	return &Logger{
 		Real:  l.Real.WithName(name),
 		name:  name,
@@ -141,9 +133,8 @@ func (l *Logger) WithName(name string) logr.Logger {
 	}
 }
 
-//
 // Get logger with values.
-func (l *Logger) WithValues(kvpair ...interface{}) logr.Logger {
+func (l *Logger) WithValues(kvpair ...interface{}) logr.LogSink {
 	return &Logger{
 		Real:  l.Real.WithValues(kvpair...),
 		name:  l.name,
@@ -151,7 +142,10 @@ func (l *Logger) WithValues(kvpair ...interface{}) logr.Logger {
 	}
 }
 
-//
+func (l *Logger) Init(info logr.RuntimeInfo) {
+	// No init needed.
+}
+
 // Package settings.
 type _Settings struct {
 	// Debug threshold.
@@ -165,7 +159,6 @@ type _Settings struct {
 	Level int
 }
 
-//
 // Determine development logger.
 func (r *_Settings) Load() {
 	r.DebugThreshold = 4
@@ -183,13 +176,11 @@ func (r *_Settings) Load() {
 	}
 }
 
-//
 // The level is at (or above) the level setting.
 func (r *_Settings) allowed(level int) bool {
 	return r.Level >= level
 }
 
-//
 // The level is at or above the debug threshold.
 func (r *_Settings) atDebug(level int) bool {
 	return level >= r.DebugThreshold

@@ -1,24 +1,22 @@
 package container
 
 import (
+	"sync"
+
 	liberr "github.com/konveyor/controller/pkg/error"
 	"github.com/konveyor/controller/pkg/inventory/model"
 	"github.com/konveyor/controller/pkg/logging"
 	"github.com/konveyor/controller/pkg/ref"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sync"
 )
 
-//
 // Logger.
 var log = logging.WithName("container")
 
-//
 // Collector key.
 type Key core.ObjectReference
 
-//
 // A container manages a collection of `Collector`.
 type Container struct {
 	// Collection of data collectors.
@@ -27,7 +25,6 @@ type Container struct {
 	mutex sync.RWMutex
 }
 
-//
 // Get a collector by (CR) object.
 func (c *Container) Get(owner meta.Object) (Collector, bool) {
 	c.mutex.RLock()
@@ -36,7 +33,6 @@ func (c *Container) Get(owner meta.Object) (Collector, bool) {
 	return p, found
 }
 
-//
 // List all collectors.
 func (c *Container) List() []Collector {
 	c.mutex.RLock()
@@ -49,7 +45,6 @@ func (c *Container) List() []Collector {
 	return list
 }
 
-//
 // Add a collector.
 func (c *Container) Add(collector Collector) (err error) {
 	owner := collector.Owner()
@@ -72,15 +67,14 @@ func (c *Container) Add(collector Collector) (err error) {
 		return liberr.Wrap(err)
 	}
 
-	log.V(3).Info(
-		"collector added.",
+	log.Real.V(3).Info(
+		"collector added",
 		"owner",
 		key)
 
 	return
 }
 
-//
 // Replace a collector.
 func (c *Container) Replace(collector Collector) (p Collector, found bool, err error) {
 	key := c.key(collector.Owner())
@@ -106,7 +100,6 @@ func (c *Container) Replace(collector Collector) (p Collector, found bool, err e
 	return
 }
 
-//
 // Delete the collector.
 func (c *Container) Delete(owner meta.Object) (p Collector, found bool) {
 	c.mutex.Lock()
@@ -124,7 +117,6 @@ func (c *Container) Delete(owner meta.Object) (p Collector, found bool) {
 	return
 }
 
-//
 // Build a collector key for an object.
 func (*Container) key(owner meta.Object) Key {
 	return Key{
@@ -133,7 +125,6 @@ func (*Container) key(owner meta.Object) Key {
 	}
 }
 
-//
 // Data collector.
 type Collector interface {
 	// The name.

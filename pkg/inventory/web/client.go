@@ -3,21 +3,21 @@ package web
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/go-logr/logr"
-	"github.com/gorilla/websocket"
-	liberr "github.com/konveyor/controller/pkg/error"
-	libmodel "github.com/konveyor/controller/pkg/inventory/model"
-	"github.com/konveyor/controller/pkg/logging"
-	"github.com/konveyor/controller/pkg/ref"
 	"io/ioutil"
 	"net/http"
 	liburl "net/url"
 	"reflect"
 	"runtime"
 	"time"
+
+	"github.com/go-logr/logr"
+	"github.com/gorilla/websocket"
+	liberr "github.com/konveyor/controller/pkg/error"
+	libmodel "github.com/konveyor/controller/pkg/inventory/model"
+	"github.com/konveyor/controller/pkg/logging"
+	"github.com/konveyor/controller/pkg/ref"
 )
 
-//
 // Header.
 const (
 	// Watch requested.
@@ -28,7 +28,6 @@ const (
 
 type WatchOptions = libmodel.WatchOptions
 
-//
 // Event handler
 type EventHandler interface {
 	// Watch options.
@@ -53,53 +52,42 @@ type EventHandler interface {
 	End()
 }
 
-//
 // Stock event handler.
 // Provides default event methods.
 type StockEventHandler struct{}
 
-//
 // Watch options.
 func (r *StockEventHandler) Options() WatchOptions {
 	return WatchOptions{}
 }
 
-//
 // Watch has started.
 func (r *StockEventHandler) Started(uint64) {}
 
-//
 // Watch has parity.
 func (r *StockEventHandler) Parity() {}
 
-//
 // A model has been created.
 func (r *StockEventHandler) Created(Event) {}
 
-//
 // A model has been updated.
 func (r *StockEventHandler) Updated(Event) {}
 
-//
 // A model has been deleted.
 func (r *StockEventHandler) Deleted(Event) {}
 
-//
 // An error has occurred reading events.
 func (r *StockEventHandler) Error(*Watch, error) {}
 
-//
 // An event watch has ended.
 func (r *StockEventHandler) End() {}
 
-//
 // Param.
 type Param struct {
 	Key   string
 	Value string
 }
 
-//
 // REST client.
 type Client struct {
 	// Transport.
@@ -112,7 +100,6 @@ type Client struct {
 	}
 }
 
-//
 // HTTP GET (method).
 func (r *Client) Get(url string, out interface{}, params ...Param) (status int, err error) {
 	parsedURL, err := liburl.Parse(url)
@@ -175,7 +162,6 @@ func (r *Client) Get(url string, out interface{}, params ...Param) (status int, 
 	return
 }
 
-//
 // HTTP POST (method).
 func (r *Client) Post(url string, in interface{}, out interface{}) (status int, err error) {
 	parsedURL, err := liburl.Parse(url)
@@ -237,7 +223,6 @@ func (r *Client) Post(url string, in interface{}, out interface{}) (status int, 
 	return
 }
 
-//
 // Watch a resource.
 func (r *Client) Watch(url string, resource interface{}, h EventHandler) (status int, w *Watch, err error) {
 	url = r.patchURL(url)
@@ -304,7 +289,6 @@ func (r *Client) Watch(url string, resource interface{}, h EventHandler) (status
 	return
 }
 
-//
 // Patch the URL.
 func (r *Client) patchURL(in string) (out string) {
 	out = in
@@ -326,7 +310,6 @@ func (r *Client) patchURL(in string) (out string) {
 	return
 }
 
-//
 // Watch (event) reader.
 type WatchReader struct {
 	// Watch ID.
@@ -347,7 +330,6 @@ type WatchReader struct {
 	done bool
 }
 
-//
 // Terminate.
 func (r *WatchReader) Terminate() {
 	if r.done {
@@ -358,14 +340,12 @@ func (r *WatchReader) Terminate() {
 	r.log.V(3).Info("reader terminated.")
 }
 
-//
 // Repair.
 func (r *WatchReader) Repair() (status int, err error) {
 	r.log.V(3).Info("repair websocket.")
 	return r.repair(r)
 }
 
-//
 // Reset logger.
 func (r *WatchReader) resetLog() {
 	r.log = logging.WithName(
@@ -377,10 +357,9 @@ func (r *WatchReader) resetLog() {
 		"resource",
 		ref.ToKind(r.resource),
 		"watch",
-		r.id)
+		r.id).Real
 }
 
-//
 // Dispatch events.
 func (r *WatchReader) start() {
 	if r.started {
@@ -438,7 +417,6 @@ func (r *WatchReader) start() {
 	}()
 }
 
-//
 // Clone resource.
 func (r *WatchReader) clone(in interface{}) (out interface{}) {
 	mt := reflect.TypeOf(in)
@@ -453,19 +431,16 @@ func (r *WatchReader) clone(in interface{}) (out interface{}) {
 	return object.Addr().Interface()
 }
 
-//
 // Represents a watch.
 type Watch struct {
 	reader *WatchReader
 }
 
-//
 // ID.
 func (r *Watch) ID() uint64 {
 	return r.reader.id
 }
 
-//
 // Repair the watch.
 func (r *Watch) Repair() (err error) {
 	status, err := r.reader.Repair()
@@ -483,7 +458,6 @@ func (r *Watch) Repair() (err error) {
 	return
 }
 
-//
 // End the watch.
 func (r *Watch) End() {
 	r.reader.log.V(3).Info("wtach end requested.")
@@ -495,7 +469,6 @@ func (r *Watch) End() {
 	r.reader.Terminate()
 }
 
-//
 // The watch has not ended.
 func (r *Watch) Alive() bool {
 	return !r.reader.done
