@@ -1,4 +1,6 @@
 # controller
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fkonveyor%2Fcontroller.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fkonveyor%2Fcontroller?ref=badge_shield)
+
 Common controller lib.  Provides components shared by application controllers.
 
 Requires: Go 1.13+ and Go Modules
@@ -46,3 +48,7 @@ Package:
 
 ---
 
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fkonveyor%2Fcontroller.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fkonveyor%2Fcontroller?ref=badge_large)
